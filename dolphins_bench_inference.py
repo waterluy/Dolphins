@@ -1,3 +1,7 @@
+import json
+import csv
+import random
+
 import os
 import json
 import argparse
@@ -115,46 +119,76 @@ def get_model_inputs(video_path, instruction, model, image_processor, tokenizer)
     ]
     inputs = tokenizer(prompt, return_tensors="pt", ).to(model.device)
    
-    print(vision_x.shape)   # torch.Size([1, 1, 16, 3, 336, 336])
-    print(prompt)
+    # print(vision_x.shape)   # torch.Size([1, 1, 16, 3, 336, 336])
+    # print(prompt)
 
     return vision_x, inputs
 
 if __name__ == "__main__":
 
-    video_path = "./playground/videos/1.mp4"
-    # instruction = "What should you do?"
-    # instruction = "Because the light is green."
-    instruction = "Please predict what time it is?"
-    # instruction = "Please describe this video in detail."
-    # instruction = "How should you safely drive in the current scenario?"
-
     model, image_processor, tokenizer = load_pretrained_modoel()
-    # tokenizer.eos_token_id = 50277
-    # tokenizer.pad_token_id = 50277
-    vision_x, inputs = get_model_inputs(video_path, instruction, model, image_processor, tokenizer)
     generation_kwargs = {'max_new_tokens': 512, 'temperature': 1,
-                            'top_k': 0, 'top_p': 1, 'no_repeat_ngram_size': 3, 'length_penalty': 1,
-                            'do_sample': False,
-                            'early_stopping': True}
+                                'top_k': 0, 'top_p': 1, 'no_repeat_ngram_size': 3, 'length_penalty': 1,
+                                'do_sample': False,
+                                'early_stopping': True}
 
-    generated_tokens = model.generate(
-        vision_x=vision_x.half().cuda(),
-        lang_x=inputs["input_ids"].cuda(),
-        attention_mask=inputs["attention_mask"].cuda(),
-        num_beams=3,
-        **generation_kwargs,
-    )
+    with open('playground/dolphins_bench/dolphins_benchmark.json', 'r') as file:
+        data = json.load(file)
+    random.shuffle(data)
 
-    generated_tokens = generated_tokens.cpu().numpy()
-    if isinstance(generated_tokens, tuple):
-        generated_tokens = generated_tokens[0]
+    with open('csvfiles/dolphins_benchmark_inference.csv', 'w') as file:
+        fieldnames = ['task_name', 'video_path', 'instruction', 'ground_truth', 'dolphins_inference']
+        writer = csv.DictWriter(file, fieldnames=fieldnames)
+        writer.writeheader()
+        
+        # 遍历JSON数据
+        for entry in data:
+            instruction = ''
+            ground_truth = ''
+            video_path = entry['video_path'][entry['video_path'].find('/')+1:]
+            task_name = entry['task_name']
+            # 从conversations中提取human的value和gpt的value
+            for conversation in entry['conversations']:
+                if conversation['from'] == 'human':
+                    instruction = conversation['value']
+                elif conversation['from'] == 'gpt':
+                    ground_truth = conversation['value']
+            if instruction == '':
+                continue
 
-    generated_text = tokenizer.batch_decode(generated_tokens)
+            tokenizer.eos_token_id = 50277
+            tokenizer.pad_token_id = 50277
 
-    print(
-        f"Dolphin output:\n\n{generated_text}"
-    )
+            vision_x, inputs = get_model_inputs(video_path, instruction, model, image_processor, tokenizer)
+
+            generated_tokens = model.generate(
+                vision_x=vision_x.half().cuda(),
+                lang_x=inputs["input_ids"].cuda(),
+                attention_mask=inputs["attention_mask"].cuda(),
+                num_beams=3,
+                **generation_kwargs,
+            )
+
+            generated_tokens = generated_tokens.cpu().numpy()
+            if isinstance(generated_tokens, tuple):
+                generated_tokens = generated_tokens[0]
+
+            generated_text = tokenizer.batch_decode(generated_tokens)
+            last_answer_index = generated_text[0].rfind("<answer>")
+            content_after_last_answer = generated_text[0][last_answer_index + len("<answer>"):]
+            print(f"\n{video_path}\n")
+            print(f"\n\ninstruction: {instruction}\ndolphins answer: {content_after_last_answer}\n\n")
+
+            # 写入CSV行数据
+            writer.writerow(
+                {
+                    'task_name': task_name,
+                    'video_path': video_path, 
+                    'instruction': instruction, 
+                    'ground_truth': ground_truth, 
+                    'dolphins_inference': content_after_last_answer,
+                }
+            )
 
 
 

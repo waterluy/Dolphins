@@ -6,9 +6,14 @@ from tqdm import tqdm
 from typing import Union
 from PIL import Image
 import mimetypes
+import requests
+import numpy as np
+import random
+import copy
+import warnings
+warnings.filterwarnings("ignore")
 
 import cv2
-
 import torch
 from torch.utils.data import DataLoader
 import transformers
@@ -40,8 +45,7 @@ def get_content_type(file_path):
     content_type, _ = mimetypes.guess_type(file_path)
     return content_type
 
-
-# ------------------- Image and Video Handling Functions -------------------
+# ------------------- 图像和视频处理函数 -------------------
 def extract_frames(video_path, num_frames=16):
     video = cv2.VideoCapture(video_path)
     total_frames = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -59,41 +63,39 @@ def extract_frames(video_path, num_frames=16):
     video.release()
     return frames
 
-
 def get_image(url: str) -> Union[Image.Image, list]:
-    if "://" not in url:  # Local file
+    if "://" not in url:  # 本地文件
         content_type = get_content_type(url)
-    else:  # Remote URL
+    else:  # 远程URL
         content_type = requests.head(url, stream=True, verify=False).headers.get("Content-Type")
 
     if "image" in content_type:
-        if "://" not in url:  # Local file
+        if "://" not in url:  # 本地文件
             return Image.open(url)
-        else:  # Remote URL
+        else:  # 远程URL
             return Image.open(requests.get(url, stream=True, verify=False).raw)
     elif "video" in content_type:
         video_path = "temp_video.mp4"
-        if "://" not in url:  # Local file
+        if "://" not in url:  # 本地文件
             video_path = url
-        else:  # Remote URL
+        else:  # 远程URL
             with open(video_path, "wb") as f:
                 f.write(requests.get(url, stream=True, verify=False).content)
         frames = extract_frames(video_path)
-        if "://" in url:  # Only remove the temporary video file if it was downloaded
+        if "://" in url:  # 如果是下载的临时视频文件，删除它
             os.remove(video_path)
         return frames
     else:
         raise ValueError("Invalid content type. Expected image or video.")
 
-
-def load_pretrained_modoel():
+def load_pretrained_model():
     peft_config, peft_model_id = None, None
     peft_config = LoraConfig(**openflamingo_tuning_config)
     model, image_processor, tokenizer = create_model_and_transforms(
         clip_vision_encoder_path="ViT-L-14-336",
         clip_vision_encoder_pretrained="openai",
-        lang_encoder_path="anas-awadalla/mpt-7b", # anas-awadalla/mpt-7b
-        tokenizer_path="anas-awadalla/mpt-7b",  # anas-awadalla/mpt-7b
+        lang_encoder_path="/home/beihang/zxw/Dolphins/mpt-7b", # anas-awadalla/mpt-7b
+        tokenizer_path="/home/beihang/zxw/Dolphins/mpt-7b",  # anas-awadalla/mpt-7b
         cross_attn_every_n_layers=4,
         use_peft=True,
         peft_config=peft_config,
@@ -105,56 +107,64 @@ def load_pretrained_modoel():
 
     return model, image_processor, tokenizer
 
-
-def get_model_inputs(video_path, instruction, model, image_processor, tokenizer):
+def get_model_inputs(video_path, instruction, model, image_processor, tokenizer, conversation_history):
     frames = get_image(video_path)
     vision_x = torch.stack([image_processor(image) for image in frames], dim=0).unsqueeze(0).unsqueeze(0)
     assert vision_x.shape[2] == len(frames)
-    prompt = [
-        f"USER: <image> is a driving video. {instruction} GPT:<answer>"
-    ]
-    inputs = tokenizer(prompt, return_tensors="pt", ).to(model.device)
-   
-    print(vision_x.shape)   # torch.Size([1, 1, 16, 3, 336, 336])
-    print(prompt)
+    new_conversation_history = copy.deepcopy(conversation_history)
 
+    if len(new_conversation_history) == 0:
+        new_conversation_history.append(f"USER: <image> is a driving video. {instruction} GPT:<answer>")
+    else:
+        new_conversation_history.append(f"USER: {instruction} GPT:<answer>")
+    prompt = "\n".join(new_conversation_history)
+    # print(f"promt: {prompt}")
+    inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
+   
     return vision_x, inputs
 
 if __name__ == "__main__":
-
     video_path = "./playground/videos/1.mp4"
-    # instruction = "What should you do?"
-    # instruction = "Because the light is green."
-    instruction = "Please predict what time it is?"
-    # instruction = "Please describe this video in detail."
-    # instruction = "How should you safely drive in the current scenario?"
+    conversation_history = []
 
-    model, image_processor, tokenizer = load_pretrained_modoel()
-    # tokenizer.eos_token_id = 50277
-    # tokenizer.pad_token_id = 50277
-    vision_x, inputs = get_model_inputs(video_path, instruction, model, image_processor, tokenizer)
-    generation_kwargs = {'max_new_tokens': 512, 'temperature': 1,
-                            'top_k': 0, 'top_p': 1, 'no_repeat_ngram_size': 3, 'length_penalty': 1,
-                            'do_sample': False,
-                            'early_stopping': True}
+    model, image_processor, tokenizer = load_pretrained_model()
+    tokenizer.eos_token_id = 50277
+    tokenizer.pad_token_id = 50277
 
-    generated_tokens = model.generate(
-        vision_x=vision_x.half().cuda(),
-        lang_x=inputs["input_ids"].cuda(),
-        attention_mask=inputs["attention_mask"].cuda(),
-        num_beams=3,
-        **generation_kwargs,
-    )
+    while True:
+        instruction = input("请输入指令（输入 'exit' 退出）：")
+        if instruction.lower() == 'exit':
+            break
 
-    generated_tokens = generated_tokens.cpu().numpy()
-    if isinstance(generated_tokens, tuple):
-        generated_tokens = generated_tokens[0]
+        vision_x, inputs = get_model_inputs(video_path, instruction, model, image_processor, tokenizer, conversation_history)
+        generation_kwargs = {'max_new_tokens': 512, 'temperature': 1,
+                             'top_k': 0, 'top_p': 1, 'no_repeat_ngram_size': 3, 'length_penalty': 1,
+                             'do_sample': False,
+                             'early_stopping': True}
 
-    generated_text = tokenizer.batch_decode(generated_tokens)
+        generated_tokens = model.generate(
+            vision_x=vision_x.half().cuda(),
+            lang_x=inputs["input_ids"].cuda(),
+            attention_mask=inputs["attention_mask"].cuda(),
+            num_beams=3,
+            **generation_kwargs,
+        )
 
-    print(
-        f"Dolphin output:\n\n{generated_text}"
-    )
+        generated_tokens = generated_tokens.cpu().numpy()
+        if isinstance(generated_tokens, tuple):
+            generated_tokens = generated_tokens[0]
 
+        generated_text = tokenizer.batch_decode(generated_tokens)
 
+        last_answer_index = generated_text[0].rfind("<answer>")
+        content_after_last_answer = generated_text[0][last_answer_index + len("<answer>"):]
 
+        response = f"{content_after_last_answer}"
+        print(f"\n{response}\n")
+
+        if len(conversation_history) == 0:
+            conversation_history.append(generated_text[0])
+        else:
+            conversation_history[0] = generated_text[0]
+
+        print(conversation_history)
