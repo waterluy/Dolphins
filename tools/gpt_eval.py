@@ -7,23 +7,25 @@ import argparse
 from multiprocessing import Pool
 from openai import OpenAI
 import requests
-
+import csv
 
 class GPTEvaluation:
     def __init__(self):
-        self.api_key = OpenAI(api_key="sk-I3lh2VFtgZQ45ZQv7fF0Ef29B16642F99451A5A8DfCb46D3")
+        self.api_key = 'sk-I3lh2VFtgZQ45ZQv7fF0Ef29B16642F99451A5A8DfCb46D3'
         self.url = 'https://api.bianxie.ai/v1/chat/completions'
         self.headers = {
             'Content-Type': 'application/json',
             'Authorization': f'Bearer {self.api_key}'
         }
-    def call_chatgpt(self, chatgpt_messages, max_tokens=40, model="gpt-3.5-turbo"):
-        response = self.client.chat.completions.create(
-            model=model, messages=chatgpt_messages, temperature=0.6, max_tokens=max_tokens
-        )
-        reply = response.choices[0].message.content
-        total_tokens = response.usage.total_tokens
-        return reply, total_tokens
+
+    def call_chatgpt(self, chatgpt_messages, max_tokens=40, model='gpt-4o-all'):
+        data = {
+            "model": model,
+            "messages": chatgpt_messages,
+        }
+        response = requests.post(self.url, headers=self.headers, json=data)
+        reply = response.json()['choices'][0]['message']['content']
+        return reply
     
     def prepare_chatgpt_message(self, prompt):
         system_message = "an evaluator who rates my answer based on the correct answer"
@@ -32,14 +34,13 @@ class GPTEvaluation:
         
         return messages
     
-    def forward(self, data):
-        answer, GT = data
-        prompts = "Rate my answer based on the correct answer out of 100, with higher scores indicating that the answer is closer to the correct answer, and you should be accurate to single digits like 62, 78, 41,etc. Output the number only"
+    def forward(self, answer, GT):
+        prompts = "Rate my answer based on the correct answer out of 100, with higher scores indicating that the answer is closer to the correct answer, and you should be accurate to single digits like 62, 78, 41,etc. Output the number only. "
         prompts = prompts + "This is the correct answer: " + GT + "This is my answer: " + answer
         
         output = ""
         messages = self.prepare_chatgpt_message(prompts)
-        reply, total_tokens = self.call_chatgpt(messages, max_tokens=3000)
+        reply = self.call_chatgpt(messages, max_tokens=3000)
 
         output += reply
         output += "\n\n"
@@ -50,14 +51,41 @@ class GPTEvaluation:
     
 
 if __name__ == "__main__":
-    data = [
-        ("The ego vehicle should notice the bus next, as it is the third object in the image. The bus is stopped at the intersection, and the ego vehicle should be cautious when approaching the intersection to ensure it does not collide with the bus.", "Firstly, notice <c3,CAM_FRONT_LEFT,1075.5,382.8>. The object is a traffic sign, so the ego vehicle should continue at the same speed. Secondly, notice <c2,CAM_FRONT,836.3,398.3>. The object is a traffic sign, so the ego vehicle should accelerate and continue ahead. Thirdly, notice <c1,CAM_BACK,991.7,603.0>. The object is stationary, so the ego vehicle should continue ahead at the same speed."),
-        # Add more data here
-    ]
+    parser = argparse.ArgumentParser(description='GPT Evaluation')
+    parser.add_argument('--csv_path', type=str, default='csvfiles/dolphins_benchmark_inference.csv', help='path to the data')
+    args = parser.parse_args()
 
+    data = []
+    scores = []
     eval = GPTEvaluation()
+    
+    with open(args.csv_path, mode='r', newline='', encoding='utf-8') as file:
+        reader = csv.DictReader(file)
+        # 遍历每一行，提取 ground_truth 和 dolphins_inference
+        for row in reader:
+            ground_truth = row['ground_truth']
+            dolphins_inference = row['dolphins_inference']
+            
+            success = False
+            while not success:
+                score = "error"
+                try:
+                    score = eval.forward(answer=dolphins_inference, GT=ground_truth)
+                    int_score = int(score)
+                except Exception as e:
+                    print(e, score)
+                    success = False
+                else:
+                    print("Success: ", int_score)
+                    scores.append(int_score)
+                    success = True
 
-    with Pool(5) as p:  # Change the number based on your CPU cores
-        scores = p.map(eval.forward, data)
+    avg_score = sum(scores) / len(scores)
+    print("Average GPT Score: ", avg_score)
 
-    print(scores)
+    save_path = args.csv_path.replace(".csv", "_gpt.txt")
+    with open(save_path, mode='w',) as f:
+        for s in scores:
+            f.write(f"{s}\n")
+        f.write(f"Average GPT Score: {avg_score}")
+    

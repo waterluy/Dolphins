@@ -3,6 +3,8 @@ __pycache__
 *.png
 captions_BDDX_clean.json
 results
-playground/dolphins_bench
+# playground/dolphins_bench
 csvfiles/
 mllm/otter/__pycache__
+t
+tmp.py

@@ -157,8 +157,8 @@ if __name__ == '__main__':
     # parser.add_argument('--csv_path', type=str, default="csvfiles/dolphins_benchmark_inference.csv", help='path to prediction file')
     # parser.add_argument('--results_path', type=str, default="./csvfiles/dolphins_benchmark_inference.txt")
     
-    parser.add_argument('--csv_path', type=str, default="csvfiles/dolphins_benchmark_attack.csv", help='path to prediction file')
-    parser.add_argument('--results_path', type=str, default="./csvfiles/dolphins_benchmark_attack.txt")
+    parser.add_argument('--csv_path', type=str, default="csvfiles/dolphins_benchmark_attack_self_target.csv", help='path to prediction file')
+    parser.add_argument('--results_path', type=str, default="csvfiles/dolphins_benchmark_attack_self_target.txt")
     args = parser.parse_args()
 
     evaluation = evaluation_suit()
