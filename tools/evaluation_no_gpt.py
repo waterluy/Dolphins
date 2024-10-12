@@ -157,14 +157,14 @@ if __name__ == '__main__':
     # parser.add_argument('--csv_path', type=str, default="csvfiles/dolphins_benchmark_inference.csv", help='path to prediction file')
     # parser.add_argument('--results_path', type=str, default="./csvfiles/dolphins_benchmark_inference.txt")
     
-    parser.add_argument('--csv_path', type=str, default="csvfiles/dolphins_benchmark_attack_self_target.csv", help='path to prediction file')
-    parser.add_argument('--results_path', type=str, default="csvfiles/dolphins_benchmark_attack_self_target.txt")
+    parser.add_argument('--csv_path', type=str, default="csvfiles/dolphins_benchmark_attack_online_gpt_target.csv", help='path to prediction file')
+    parser.add_argument('--results_path', type=str, default="csvfiles/dolphins_benchmark_attack_online_gpt_target.txt")
     args = parser.parse_args()
 
     evaluation = evaluation_suit()
 
     # 打开 CSV 文件并读取内容
-    with open(args.csv_path, mode='r', newline='', encoding='utf-8') as file:
+    with open(args.csv_path, mode='r', newline='') as file:
         reader = csv.DictReader(file)
         
         # 遍历每一行，提取 ground_truth 和 dolphins_inference

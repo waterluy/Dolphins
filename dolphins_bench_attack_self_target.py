@@ -258,7 +258,7 @@ if __name__ == "__main__":
 
     with open('playground/dolphins_bench/dolphins_benchmark.json', 'r') as file:
         data = json.load(file)
-    random.shuffle(data)
+    # random.shuffle(data)
 
     with open(csv_path, 'a') as file:
         fieldnames = ['task_name', 'video_path', 'instruction', 'ground_truth', 'dolphins_inference']

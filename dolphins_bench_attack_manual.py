@@ -32,6 +32,9 @@ from peft import (
     PeftModel
 )
 
+mean = [0.48145466, 0.4578275, 0.40821073] 
+std = [0.26862954, 0.26130258, 0.27577711]
+
 def setup_seed(seed):
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
@@ -153,12 +156,30 @@ def get_model_inputs(video_path, instruction, model, image_processor, tokenizer,
         grad = torch.autograd.grad(total_loss, noise)[0]
         noise.grad = grad
         optimizer.step()
-    # from torchvision.utils import save_image
-    # save_image(noise[0], "noisy_vision_x0.png")
-    # save_image(noise[1], "noisy_vision_x1.png")
-    # save_image(noise[2], "noisy_vision_x2.png")
-    # save_image(noise[3], "noisy_vision_x3.png")
-    # save_image(noise[4], "noisy_vision_x4.png")
+    from torchvision.utils import save_image
+    image_mean = torch.tensor(mean).view(3, 1, 1) # .cuda()
+    image_std = torch.tensor(std).view(3, 1, 1) # .cuda()
+    # save_image(noise[0], "noise_vision_x0.png")
+    # save_image(noise[1], "noise_vision_x1.png")
+    # save_image(noise[2], "noise_vision_x2.png")
+    # save_image(noise[3], "noise_vision_x3.png")
+    # save_image(noise[4], "noise_vision_x4.png")
+    # save_image(noise[0] * image_std + image_mean, "noise_vision_x0_ori.png")
+    # save_image(noise[1] * image_std + image_mean, "noise_vision_x1_ori.png")
+    # save_image(noise[2] * image_std + image_mean, "noise_vision_x2_ori.png")
+    # save_image(noise[3] * image_std + image_mean, "noise_vision_x3_ori.png")
+    # save_image(noise[4] * image_std + image_mean, "noise_vision_x4_ori.png")
+    # save_image((vision_x[0, 0, :] + noise)[0] * image_std + image_mean, "noisy_vision_x0.png")
+    # save_image((vision_x[0, 0, :] + noise)[1] * image_std + image_mean, "noisy_vision_x1.png")
+    # save_image((vision_x[0, 0, :] + noise)[2] * image_std + image_mean, "noisy_vision_x2.png")
+    # save_image((vision_x[0, 0, :] + noise)[3] * image_std + image_mean, "noisy_vision_x3.png")
+    # save_image((vision_x[0, 0, :] + noise)[4] * image_std + image_mean, "noisy_vision_x4.png")
+    # save_image((vision_x[0, 0, :])[0] * image_std + image_mean, "ori_vision_x0.png")
+    # save_image((vision_x[0, 0, :])[1] * image_std + image_mean, "ori_vision_x1.png")
+    # save_image((vision_x[0, 0, :])[2] * image_std + image_mean, "ori_vision_x2.png")
+    # save_image((vision_x[0, 0, :])[3] * image_std + image_mean, "ori_vision_x3.png")
+    # save_image((vision_x[0, 0, :])[4] * image_std + image_mean, "ori_vision_x4.png")
+    # quit()
     noisy_vision_x = (vision_x[0, 0, :] + noise).unsqueeze(0).unsqueeze(0)
 
     if conversation_history is not None:
@@ -203,7 +224,7 @@ if __name__ == "__main__":
 
     with open('playground/dolphins_bench/dolphins_benchmark.json', 'r') as file:
         data = json.load(file)
-    random.shuffle(data)
+    # random.shuffle(data)
 
     with open(f'csvfiles/dolphins_benchmark_attack_manual_{LR}_{ITER}.csv', 'w') as file:
         fieldnames = ['task_name', 'video_path', 'instruction', 'ground_truth', 'dolphins_inference']

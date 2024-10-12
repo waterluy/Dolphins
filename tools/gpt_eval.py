@@ -52,7 +52,7 @@ class GPTEvaluation:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='GPT Evaluation')
-    parser.add_argument('--csv_path', type=str, default='csvfiles/dolphins_benchmark_inference.csv', help='path to the data')
+    parser.add_argument('--csv_path', type=str, default='csvfiles/dolphins_benchmark_attack_online_gpt_target.csv', help='path to the data')
     args = parser.parse_args()
 
     data = []
@@ -88,4 +88,5 @@ if __name__ == "__main__":
         for s in scores:
             f.write(f"{s}\n")
         f.write(f"Average GPT Score: {avg_score}")
+    
     
