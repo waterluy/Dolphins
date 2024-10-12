@@ -199,8 +199,12 @@ def optimize_noise(vision_x, grad, step_size):
     return optimized_x  # 确保值在[0,1]范围内
 
 if __name__ == "__main__":
-    LR = 0.002
-    ITER = 500
+    parser = argparse.ArgumentParser(description='GPT Evaluation')
+    parser.add_argument('--lr', type=float, default=0.002)
+    parser.add_argument('--iter', type=int, default=500)
+    args = parser.parse_args()
+    LR = args.lr
+    ITER = args.iter
 
     model, image_processor, tokenizer = load_pretrained_modoel()
     device = model.device

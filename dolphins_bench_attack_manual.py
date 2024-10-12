@@ -212,8 +212,12 @@ def read_instruction(instruction_path):
 
 
 if __name__ == "__main__":
-    LR = 0.002
-    ITER = 500
+    parser = argparse.ArgumentParser(description='GPT Evaluation')
+    parser.add_argument('--lr', type=float, default=0.002)
+    parser.add_argument('--iter', type=int, default=500)
+    args = parser.parse_args()
+    LR = args.lr
+    ITER = args.iter
     conversation_history = []
 
     model, image_processor, tokenizer = load_pretrained_modoel()

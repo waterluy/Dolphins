@@ -233,10 +233,14 @@ def read_instruction(instruction_path):
 
 
 if __name__ == "__main__":
-    LR = 0.001
-    ITER = 500
+    parser = argparse.ArgumentParser(description='GPT Evaluation')
+    parser.add_argument('--lr', type=float, default=0.002)
+    parser.add_argument('--iter', type=int, default=500)
+    args = parser.parse_args()
+    LR = args.lr
+    ITER = args.iter
 
-    csv_path = 'csvfiles/dolphins_benchmark_attack_online_gpt_target.csv'
+    csv_path = f'csvfiles/dolphins_benchmark_attack_online_gpt_target_{LR}_{ITER}.csv'
     df = pd.read_csv(csv_path)
     path_data = df['video_path'].tolist()
     question_data = df['instruction'].tolist()
