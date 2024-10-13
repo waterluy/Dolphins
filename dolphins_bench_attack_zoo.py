@@ -277,6 +277,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='GPT Evaluation')
     parser.add_argument('--lr', type=float, default=0.002)
     parser.add_argument('--iter', type=int, default=500)
+    parser.add_argument('--opt', type=str, default='none')
     args = parser.parse_args()
     LR = args.lr
     ITER = args.iter
