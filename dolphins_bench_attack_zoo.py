@@ -263,10 +263,11 @@ def newton_optimize(noise, grad, hessian, lr=1e-3):
     delta_star = np.zeros_like(noise)
 
     # 处理负 Hessian 的情况
-    delta_star[~positive_hessian] = -lr * grad[~positive_hessian]
+    delta_star[~positive_hessian] = -lr * grad # [~positive_hessian]
 
     # 处理正 Hessian 的情况
-    delta_star[positive_hessian] = -lr * (grad[positive_hessian] / hessian[positive_hessian])
+    # delta_star[positive_hessian] = -lr * (grad[positive_hessian] / hessian[positive_hessian])
+    delta_star[positive_hessian] = -lr * (grad / hessian)
 
     # 更新噪声
     noise += delta_star
@@ -295,7 +296,7 @@ if __name__ == "__main__":
     # 初始化进度条，设置position=0以确保它在最底部
     progress_bar = tqdm(total=len(data), position=0)
 
-    with open(f'csvfiles/dolphins_benchmark_attack_zoo_{LR}_{ITER}.csv', 'w') as file:
+    with open(f'csvfiles/dolphins_benchmark_attack_zoo_{LR}_{ITER}_{args.opt}.csv', 'w') as file:
         fieldnames = ['task_name', 'video_path', 'instruction', 'ground_truth', 'dolphins_inference']
         writer = csv.DictWriter(file, fieldnames=fieldnames)
         writer.writeheader()
