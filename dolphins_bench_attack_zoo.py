@@ -17,7 +17,7 @@ import torch
 from torch.utils.data import DataLoader
 import transformers
 from transformers import LlamaTokenizer, CLIPImageProcessor
-
+from tqdm import tqdm
 from configs.dataset_config import DATASET_CONFIG
 from configs.lora_config import openflamingo_tuning_config, otter_tuning_config
 
@@ -177,26 +177,101 @@ def compute_loss(model, vision_x, inputs, target_output):
 def estimate_gradient(model, vision_x, inputs, target_output, epsilon=1e-4):
     grad = np.zeros_like(vision_x.cpu().numpy())
 
-    for i in range(vision_x.shape[2]):  # 遍历每个图像
-        # 计算正向扰动
-        perturbed_input_plus = vision_x + epsilon
-        loss_plus = compute_loss(model, perturbed_input_plus, inputs, target_output)
-        
-        # 计算反向扰动
-        perturbed_input_minus = vision_x - epsilon
-        loss_minus = compute_loss(model, perturbed_input_minus, inputs, target_output)
-        
-        # 估计梯度
-        grad[:, :, i] = (loss_plus - loss_minus) / (2 * epsilon)
+    # 所有图像可以一起计算梯度
+    # 计算正向扰动
+    perturbed_input_plus = vision_x + epsilon
+    loss_plus = compute_loss(model, perturbed_input_plus, inputs, target_output)
     
-    return grad
+    # 计算反向扰动
+    perturbed_input_minus = vision_x - epsilon
+    loss_minus = compute_loss(model, perturbed_input_minus, inputs, target_output)
+    
+    # 估计梯度
+    grad = (loss_plus - loss_minus) / (2 * epsilon)
+    
+    return grad.detach().cpu().numpy()
 
-def optimize_noise(vision_x, grad, step_size):
-    # 优化噪声
-    delta = -step_size * grad
-    delta = delta.clamp(min=0, max=1)
-    optimized_x = vision_x + delta
-    return optimized_x  # 确保值在[0,1]范围内
+def estimate_gradient_newt(model, vision_x, inputs, target_output, epsilon=1e-4):
+    grad = np.zeros_like(vision_x.cpu().numpy())
+    loss = compute_loss(model, vision_x, inputs, target_output)
+
+    # 所有图像可以一起计算梯度
+    # 计算正向扰动
+    perturbed_input_plus = vision_x + epsilon
+    loss_plus = compute_loss(model, perturbed_input_plus, inputs, target_output)
+    
+    # 计算反向扰动
+    perturbed_input_minus = vision_x - epsilon
+    loss_minus = compute_loss(model, perturbed_input_minus, inputs, target_output)
+    
+    # 估计梯度
+    grad = (loss_plus - loss_minus) / (2 * epsilon)
+    hessian = (loss_plus - 2 * loss + loss_minus) / (epsilon ** 2)
+    
+    return grad.detach().cpu().numpy(), hessian.detach().cpu().numpy()
+
+def adam_optimize(noise, grad, m, v, t, lr=0.01, beta1=0.9, beta2=0.999, epsilon=1e-8):
+    """
+    使用 Adam 优化器更新噪声。
+    
+    参数：
+    - noise: 当前噪声
+    - grad: 梯度值
+    - m: 一阶动量估计
+    - v: 二阶动量估计
+    - t: 当前迭代步数
+    - lr: 学习率 (默认为 0.01)
+    - beta1: 一阶动量衰减系数 (默认为 0.9)
+    - beta2: 二阶动量衰减系数 (默认为 0.999)
+    - epsilon: 防止除零的小数 (默认为 1e-8)
+    
+    返回值：
+    - 更新后的噪声
+    - 更新后的一阶动量 m
+    - 更新后的二阶动量 v
+    """
+    # 更新一阶和二阶动量
+    m = beta1 * m + (1 - beta1) * grad
+    v = beta2 * v + (1 - beta2) * (grad ** 2)
+    
+    # 计算偏差修正后的 m_hat 和 v_hat
+    m_hat = m / (1 - beta1 ** t)
+    v_hat = v / (1 - beta2 ** t)
+    
+    # 更新噪声
+    noise = noise - lr * m_hat / (np.sqrt(v_hat) + epsilon)
+    
+    return noise, m, v
+
+def newton_optimize(noise, grad, hessian, lr=1e-3):
+    """
+    使用牛顿法优化噪声。
+
+    参数：
+    - noise: 当前噪声
+    - grad: 当前梯度
+    - hessian: 当前 Hessian
+    - lr: 学习率，默认值为 1e-3
+
+    返回：
+    - 更新后的噪声
+    """
+    # 计算 Hessian 的符号，创建布尔数组
+    positive_hessian = hessian > 0
+
+    # 创建 delta_star 数组
+    delta_star = np.zeros_like(noise)
+
+    # 处理负 Hessian 的情况
+    delta_star[~positive_hessian] = -lr * grad[~positive_hessian]
+
+    # 处理正 Hessian 的情况
+    delta_star[positive_hessian] = -lr * (grad[positive_hessian] / hessian[positive_hessian])
+
+    # 更新噪声
+    noise += delta_star
+    
+    return noise
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='GPT Evaluation')
@@ -216,12 +291,15 @@ if __name__ == "__main__":
     with open('playground/dolphins_bench/dolphins_benchmark.json', 'r') as file:
         data = json.load(file)
     # random.shuffle(data)
+    # 初始化进度条，设置position=0以确保它在最底部
+    progress_bar = tqdm(total=len(data), position=0)
 
     with open(f'csvfiles/dolphins_benchmark_attack_zoo_{LR}_{ITER}.csv', 'w') as file:
         fieldnames = ['task_name', 'video_path', 'instruction', 'ground_truth', 'dolphins_inference']
         writer = csv.DictWriter(file, fieldnames=fieldnames)
         writer.writeheader()
         
+        iter_num = 0
         # 遍历JSON数据
         for entry in data:
             instruction = ''
@@ -244,21 +322,34 @@ if __name__ == "__main__":
             vision_x, inputs = get_model_inputs(video_path, instruction, model, image_processor, tokenizer)
 
             # 初始化噪声
-            delta = np.zeros_like(vision_x.cpu().numpy())
-            for _ in range(ITER):  # num_iterations 代表迭代次数
+            noise = np.zeros_like(vision_x.cpu().numpy())
+            # 初始化动量和时间步数
+            m = np.zeros_like(noise)
+            v = np.zeros_like(noise)
+            for iter_num in range(ITER):  # num_iterations 代表迭代次数
+                print(f"Iteration: {iter_num}")
                 # 计算目标输出
                 target_output = ground_truth  # 或者使用其他目标
                 
-                # 估计梯度
-                # print(vision_x + delta) 可以直接相加
-                grad = estimate_gradient(model, vision_x + delta, inputs, target_output)
-                
-                # 优化噪声
-                delta = optimize_noise(vision_x, grad, step_size=0.02)
+                if args.opt == 'adam':
+                    # 估计梯度
+                    grad = estimate_gradient(model, vision_x + noise, inputs, target_output)
+                    # 使用 Adam 优化噪声
+                    noise, m, v = adam_optimize(noise, grad, m, v, iter_num+1, lr=LR)
+                elif args.opt == 'newt':
+                    # 估计梯度
+                    grad, hessian = estimate_gradient_newt(model, vision_x + noise, inputs, target_output)
+                    # 使用牛顿法优化噪声
+                    noise = newton_optimize(noise, grad, hessian, lr=LR)
+                else:
+                    # 估计梯度
+                    grad = estimate_gradient(model, vision_x + noise, inputs, target_output)
+                    noise = noise - LR * grad
 
+            attack_vision_x = vision_x + noise
             # 最终生成的输出
             generated_tokens = model.generate(
-                vision_x=vision_x.half().cuda(),
+                vision_x=attack_vision_x.half().cuda(),
                 lang_x=inputs["input_ids"].cuda(),
                 attention_mask=inputs["attention_mask"].cuda(),
                 num_beams=3,
@@ -285,6 +376,9 @@ if __name__ == "__main__":
                     'dolphins_inference': content_after_last_answer,
                 }
             )
+
+            # 每次迭代更新进度条
+            progress_bar.update(1)
 
 
 
