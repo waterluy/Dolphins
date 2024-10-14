@@ -58,6 +58,8 @@ class Flamingo(nn.Module):
         self._use_gradient_checkpointing = gradient_checkpointing
         self.perceiver._use_gradient_checkpointing = gradient_checkpointing
         self.device = self.lang_encoder.device
+        self.grad_cam = False
+        self.loss_for_cam = None
 
     def forward(
         self,
@@ -217,10 +219,15 @@ class Flamingo(nn.Module):
         # assert F == 1, "Only single frame supported"
 
         vision_x = rearrange(vision_x, "b T F c h w -> (b T F) c h w")
-        with torch.no_grad():
+        if self.grad_cam:
             vision_x = self.vision_encoder(vision_x)[1]
+        else:
+            with torch.no_grad():
+                vision_x = self.vision_encoder(vision_x)[1]
         vision_x = rearrange(vision_x, "(b T F) v d -> b T F v d", b=b, T=T, F=F)
         vision_x = self.perceiver(vision_x)
+        
+        self.loss_for_cam = 100 * vision_x.sum()
 
         for layer in self.lang_encoder._get_decoder_layers():
             layer.condition_vis_x(vision_x)

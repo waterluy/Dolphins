@@ -7,4 +7,6 @@ results
 csvfiles/
 mllm/otter/__pycache__
 t
-tmp.py
+tmp*
+vis/*
+grad_cam_images/*
