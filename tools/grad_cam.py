@@ -74,7 +74,8 @@ class GradCAM:
         # 获取特征图和梯度
         activation = self.activations[-1].detach()  # 获取保存的特征图
         print(activation)
-        gradients = self.gradients[-1].detach()  # 获取保存的梯度
+        gradients = self.gradients[-1].detach() * 1000000000  # 获取保存的梯度
+        gradients = torch.nan_to_num(gradients)
         print(gradients)
         # print(gradients.shape)  # torch.Size([577, 48, 1024])
         weights = gradients.mean(dim=(1, 2), keepdim=True)  # 对空间维度进行平均，得到权重

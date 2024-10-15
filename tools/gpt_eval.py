@@ -83,7 +83,7 @@ if __name__ == "__main__":
     avg_score = sum(scores) / len(scores)
     print("Average GPT Score: ", avg_score)
 
-    save_path = args.csv_path.replace(".csv", "_gpt.txt")
+    save_path = args.csv_path.replace(".csv", "_gpt1.txt")
     with open(save_path, mode='w',) as f:
         for s in scores:
             f.write(f"{s}\n")

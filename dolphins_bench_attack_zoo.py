@@ -34,6 +34,8 @@ from peft import (
 )
 import torch.nn.functional as F
 import numpy as np
+import clip
+from torchvision import transforms
 
 def setup_seed(seed):
     torch.manual_seed(seed)
@@ -137,10 +139,6 @@ def loss_function(predicted_output, target_output):
     返回：
     loss: 计算得到的损失值
     """
-    import clip
-    import torch.nn.functional as F
-    from torchvision import transforms
-    model_clip, preprocess_clip = clip.load("ViT-B/32", device=model.device) 
     predicted_text_features = model_clip.encode_text(clip.tokenize(predicted_output, truncate=True).to(device)).to(device)
     predicted_text_features_normed = F.normalize(predicted_text_features, dim=-1)
     target_text_features = model_clip.encode_text(clip.tokenize(target_output, truncate=True).to(device)).to(device)
@@ -175,40 +173,69 @@ def compute_loss(model, vision_x, inputs, target_output):
     return loss
 
 def estimate_gradient(model, vision_x, inputs, target_output, epsilon=1e-4):
-    grad = np.zeros_like(vision_x.cpu().numpy())
+    perturbation = torch.zeros_like(vision_x)
+    # print(vision_x.shape)   # torch.Size([1, 1, 16, 3, 336, 336])
+    random_c = []
+    random_h = []
+    random_w = []
+    for n in range(vision_x.shape[2]):
+        random_c.append(torch.randint(0, vision_x.shape[3], (1,)).item())
+        random_h.append(torch.randint(0, vision_x.shape[4], (1,)).item())
+        random_w.append(torch.randint(0, vision_x.shape[5], (1,)).item())
+        perturbation[:, :, n, random_c[n], random_h[n], random_w[n]] = 1
+    perturbation = perturbation.to(device) * epsilon
 
     # 所有图像可以一起计算梯度
     # 计算正向扰动
-    perturbed_input_plus = vision_x + epsilon
+    perturbed_input_plus = vision_x + perturbation
     loss_plus = compute_loss(model, perturbed_input_plus, inputs, target_output)
     
     # 计算反向扰动
-    perturbed_input_minus = vision_x - epsilon
+    perturbed_input_minus = vision_x - perturbation
     loss_minus = compute_loss(model, perturbed_input_minus, inputs, target_output)
     
     # 估计梯度
     grad = (loss_plus - loss_minus) / (2 * epsilon)
+    gradient = torch.zeros_like(vision_x).to(device)
+    for n in range(vision_x.shape[2]):
+        gradient[:, :, n, random_c[n], random_h[n], random_w[n]] = grad
     
-    return grad.detach().cpu().numpy()
+    return gradient.detach()
 
 def estimate_gradient_newt(model, vision_x, inputs, target_output, epsilon=1e-4):
-    grad = np.zeros_like(vision_x.cpu().numpy())
+    perturbation = torch.zeros_like(vision_x)
+    # print(vision_x.shape)   # torch.Size([1, 1, 16, 3, 336, 336])
+    random_c = []
+    random_h = []
+    random_w = []
+    for n in range(vision_x.shape[2]):
+        random_c.append(torch.randint(0, vision_x.shape[3], (1,)).item())
+        random_h.append(torch.randint(0, vision_x.shape[4], (1,)).item())
+        random_w.append(torch.randint(0, vision_x.shape[5], (1,)).item())
+        perturbation[:, :, n, random_c[n], random_h[n], random_w[n]] = 1
+    perturbation = perturbation.to(device) * epsilon
     loss = compute_loss(model, vision_x, inputs, target_output)
 
     # 所有图像可以一起计算梯度
     # 计算正向扰动
-    perturbed_input_plus = vision_x + epsilon
+    perturbed_input_plus = vision_x + perturbation
     loss_plus = compute_loss(model, perturbed_input_plus, inputs, target_output)
     
     # 计算反向扰动
-    perturbed_input_minus = vision_x - epsilon
+    perturbed_input_minus = vision_x - perturbation
     loss_minus = compute_loss(model, perturbed_input_minus, inputs, target_output)
     
     # 估计梯度
     grad = (loss_plus - loss_minus) / (2 * epsilon)
-    hessian = (loss_plus - 2 * loss + loss_minus) / (epsilon ** 2)
+    gradient = torch.zeros_like(vision_x).to(device)
+    for n in range(vision_x.shape[2]):
+        gradient[:, :, n, random_c[n], random_h[n], random_w[n]] = grad
+    h = (loss_plus - 2 * loss + loss_minus) / (epsilon ** 2)
+    hessian = torch.zeros_like(vision_x).to(device)
+    for n in range(vision_x.shape[2]):
+        hessian[:, :, n, random_c[n], random_h[n], random_w[n]] = h
     
-    return grad.detach().cpu().numpy(), hessian.detach().cpu().numpy()
+    return grad.detach(), hessian.detach()
 
 def adam_optimize(noise, grad, m, v, t, lr=0.01, beta1=0.9, beta2=0.999, epsilon=1e-8):
     """
@@ -260,14 +287,13 @@ def newton_optimize(noise, grad, hessian, lr=1e-3):
     positive_hessian = hessian > 0
 
     # 创建 delta_star 数组
-    delta_star = np.zeros_like(noise)
+    delta_star = torch.zeros_like(noise)
 
     # 处理负 Hessian 的情况
-    delta_star[~positive_hessian] = -lr * grad # [~positive_hessian]
+    delta_star[~positive_hessian] = -lr * grad[~positive_hessian]
 
     # 处理正 Hessian 的情况
-    # delta_star[positive_hessian] = -lr * (grad[positive_hessian] / hessian[positive_hessian])
-    delta_star[positive_hessian] = -lr * (grad / hessian)
+    delta_star[positive_hessian] = -lr * (grad[positive_hessian] / hessian[positive_hessian])
 
     # 更新噪声
     noise += delta_star
@@ -278,13 +304,15 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='GPT Evaluation')
     parser.add_argument('--lr', type=float, default=0.002)
     parser.add_argument('--iter', type=int, default=500)
-    parser.add_argument('--opt', type=str, default='none')
+    parser.add_argument('--samples', type=int, default=10)
+    parser.add_argument('--opt', type=str, default='none', choices=["adam", "newt", "none"])
     args = parser.parse_args()
     LR = args.lr
     ITER = args.iter
 
     model, image_processor, tokenizer = load_pretrained_modoel()
     device = model.device
+    model_clip, preprocess_clip = clip.load("ViT-B/32", device=model.device) 
     generation_kwargs = {'max_new_tokens': 512, 'temperature': 1,
                                 'top_k': 0, 'top_p': 1, 'no_repeat_ngram_size': 3, 'length_penalty': 1,
                                 'do_sample': False,
@@ -324,29 +352,30 @@ if __name__ == "__main__":
             vision_x, inputs = get_model_inputs(video_path, instruction, model, image_processor, tokenizer)
 
             # 初始化噪声
-            noise = np.zeros_like(vision_x.cpu().numpy())
+            noise = torch.zeros_like(vision_x).to(device)
             # 初始化动量和时间步数
-            m = np.zeros_like(noise)
-            v = np.zeros_like(noise)
+            m = torch.zeros_like(noise).to(device)
+            v = torch.zeros_like(noise).to(device)
             for iter_num in range(ITER):  # num_iterations 代表迭代次数
                 print(f"Iteration: {iter_num}")
-                # 计算目标输出
-                target_output = ground_truth  # 或者使用其他目标
-                
-                if args.opt == 'adam':
-                    # 估计梯度
-                    grad = estimate_gradient(model, vision_x + noise, inputs, target_output)
-                    # 使用 Adam 优化噪声
-                    noise, m, v = adam_optimize(noise, grad, m, v, iter_num+1, lr=LR)
-                elif args.opt == 'newt':
-                    # 估计梯度
-                    grad, hessian = estimate_gradient_newt(model, vision_x + noise, inputs, target_output)
-                    # 使用牛顿法优化噪声
-                    noise = newton_optimize(noise, grad, hessian, lr=LR)
-                else:
-                    # 估计梯度
-                    grad = estimate_gradient(model, vision_x + noise, inputs, target_output)
-                    noise = noise - LR * grad
+                for _ in range(args.samples):
+                    # 计算目标输出
+                    target_output = ground_truth  # 或者使用其他目标
+                    
+                    if args.opt == 'adam':
+                        # 估计梯度
+                        grad = estimate_gradient(model, vision_x + noise, inputs, target_output)
+                        # 使用 Adam 优化噪声
+                        noise, m, v = adam_optimize(noise, grad, m, v, iter_num+1, lr=LR)
+                    elif args.opt == 'newt':
+                        # 估计梯度
+                        grad, hessian = estimate_gradient_newt(model, vision_x + noise, inputs, target_output)
+                        # 使用牛顿法优化噪声
+                        noise = newton_optimize(noise, grad, hessian, lr=LR)
+                    else:
+                        # 估计梯度
+                        grad = estimate_gradient(model, vision_x + noise, inputs, target_output)
+                        noise = noise - LR * grad
 
             attack_vision_x = vision_x + noise
             # 最终生成的输出

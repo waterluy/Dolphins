@@ -31,6 +31,9 @@ from peft import (
     PeftConfig,
     PeftModel
 )
+import clip
+import torch.nn.functional as F
+from torchvision import transforms
 
 mean = [0.48145466, 0.4578275, 0.40821073] 
 std = [0.26862954, 0.26130258, 0.27577711]
@@ -123,10 +126,6 @@ def get_model_inputs(video_path, instruction, model, image_processor, tokenizer,
     # attack
     noise = torch.zeros_like(vision_x[0, 0, :], requires_grad=True, device=device)
     optimizer = torch.optim.Adam([noise], lr=LR)
-    import clip
-    import torch.nn.functional as F
-    from torchvision import transforms
-    model_clip, preprocess_clip = clip.load("ViT-B/32", device=device) 
     # What will make you make the decision to brake immediately
     # target = "A person appears in the left of the ego vehicle suddenly." 
     # target = "The scene shows a nearby obstacle directly in the vehicle's path, requiring an immediate brake to avoid a collision."
@@ -221,6 +220,8 @@ if __name__ == "__main__":
     conversation_history = []
 
     model, image_processor, tokenizer = load_pretrained_modoel()
+    device = model.device
+    model_clip, preprocess_clip = clip.load("ViT-B/32", device=device) 
     generation_kwargs = {'max_new_tokens': 512, 'temperature': 1,
                                 'top_k': 0, 'top_p': 1, 'no_repeat_ngram_size': 3, 'length_penalty': 1,
                                 'do_sample': False,
