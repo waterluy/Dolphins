@@ -239,11 +239,11 @@ if __name__ == "__main__":
     LR = args.lr
     ITER = args.iter
 
-    csv_path = f'csvfiles/dolphins_benchmark_attack_online_gpt_target_{LR}_{ITER}.csv'
-    df = pd.read_csv(csv_path)
-    path_data = df['video_path'].tolist()
-    question_data = df['instruction'].tolist()
-    ok_data = set(zip(path_data, question_data))
+    ok_unique_id = []
+    json_path = f'results/dolphins_benchmark_attack_online_gpt_target_{LR}_{ITER}.json'
+    with open(json_path, 'r') as file:
+        for line in file:
+            ok_unique_id.append(json.loads(line)['id'])
 
     # conversation_history = []
 
@@ -264,16 +264,13 @@ if __name__ == "__main__":
     #     writer = csv.DictWriter(file, fieldnames=target_fieldnames)
     #     writer.writeheader()
 
-    with open(csv_path, 'a') as file:
-        fieldnames = ['task_name', 'video_path', 'instruction', 'ground_truth', 'dolphins_inference']
-        writer = csv.DictWriter(file, fieldnames=fieldnames)
-        # 模式为a时，不需要再次写入表头
-        # writer.writeheader()
-
+    with open(json_path, 'a') as file:
         # 遍历JSON数据
         for entry in data:
             instruction = ''
             ground_truth = ''
+            unique_id = entry["id"]
+            label = entry['label']
             video_path = entry['video_path'][entry['video_path'].find('/')+1:]
             # 从conversations中提取human的value和gpt的value
             for conversation in entry['conversations']:
@@ -284,10 +281,10 @@ if __name__ == "__main__":
             if instruction == '':
                 continue
 
-            if (video_path, instruction) in ok_data:
+            if unique_id in ok_unique_id:
                 continue
-            # if (video_path, instruction) not in ok_data:
-            #     print(video_path, instruction)
+            if unique_id not in ok_unique_id:
+                print(unique_id, video_path, instruction)
             task_name = entry['task_name']
             
             mp4 = f"https://github.com/waterluy/Dolphins/blob/wlu-main/{video_path}"
@@ -336,13 +333,13 @@ if __name__ == "__main__":
             #     conversation_history[0] = generated_text[0]
             print(f"\n{video_path}\n")
             print(f"\n\ninstruction: {instruction}\ndolphins answer: {content_after_last_answer}\n\n")
-            # 写入CSV行数据
-            writer.writerow(
-                {
-                    'task_name': task_name,
-                    'video_path': video_path, 
-                    'instruction': instruction, 
-                    'ground_truth': ground_truth, 
-                    'dolphins_inference': content_after_last_answer,
-                }
+            # 写入json行数据
+            file.write(
+                json.dumps({
+                    "unique_id": unique_id,
+                    "task_name": task_name,
+                    "pred": content_after_last_answer,
+                    "gt": ground_truth,
+                    "label": label
+                }) + "\n"
             )

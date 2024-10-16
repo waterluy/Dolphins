@@ -34,7 +34,7 @@ class GPTEvaluation:
         
         return messages
     
-    def forward(self, answer, GT):
+    def GPT_eval(self, answer, GT):
         prompts = "Rate my answer based on the correct answer out of 100, with higher scores indicating that the answer is closer to the correct answer, and you should be accurate to single digits like 62, 78, 41,etc. Output the number only. "
         prompts = prompts + "This is the correct answer: " + GT + "This is my answer: " + answer
         
@@ -49,41 +49,46 @@ class GPTEvaluation:
 
         return output
     
+    def forward(self, answer, GT) -> int:
+        success = False
+        while not success:
+            score = "error"
+            try:
+                score = self.GPT_eval(answer=answer, GT=GT)
+                int_score = int(score)
+            except Exception as e:
+                print(e, score)
+                success = False
+            else:
+                print("Success: ", int_score)
+                success = True
+
+        return int_score
+    
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='GPT Evaluation')
-    parser.add_argument('--csv_path', type=str, default='csvfiles/dolphins_benchmark_attack_online_gpt_target.csv', help='path to the data')
+    parser.add_argument('--json-path', type=str, default='results/dolphins_benchmark_attack_online_gpt_target_0.json', help='path to the data')
     args = parser.parse_args()
 
     data = []
     scores = []
     eval = GPTEvaluation()
     
-    with open(args.csv_path, mode='r', newline='', encoding='utf-8') as file:
-        reader = csv.DictReader(file)
+    with open(args.json_path, mode='r', newline='', encoding='utf-8') as file:
+        lines = [line for line in file]
         # 遍历每一行，提取 ground_truth 和 dolphins_inference
-        for row in reader:
-            ground_truth = row['ground_truth']
-            dolphins_inference = row['dolphins_inference']
+        for row in lines:
+            ground_truth = row['gt']
+            dolphins_inference = row['pred']
             
-            success = False
-            while not success:
-                score = "error"
-                try:
-                    score = eval.forward(answer=dolphins_inference, GT=ground_truth)
-                    int_score = int(score)
-                except Exception as e:
-                    print(e, score)
-                    success = False
-                else:
-                    print("Success: ", int_score)
-                    scores.append(int_score)
-                    success = True
+            int_score = eval.forward(answer=dolphins_inference, GT=ground_truth)
+            scores.append(int_score)
 
     avg_score = sum(scores) / len(scores)
     print("Average GPT Score: ", avg_score)
 
-    save_path = args.csv_path.replace(".csv", "_gpt1.txt")
+    save_path = args.json_path.replace(".json", "_gpt1.txt")
     with open(save_path, mode='w',) as f:
         for s in scores:
             f.write(f"{s}\n")

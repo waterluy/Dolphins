@@ -134,19 +134,17 @@ if __name__ == "__main__":
 
     with open('playground/dolphins_bench/dolphins_benchmark.json', 'r') as file:
         data = json.load(file)
-    random.shuffle(data)
+    # random.shuffle(data)
 
-    with open('csvfiles/dolphins_benchmark_inference.csv', 'w') as file:
-        fieldnames = ['task_name', 'video_path', 'instruction', 'ground_truth', 'dolphins_inference']
-        writer = csv.DictWriter(file, fieldnames=fieldnames)
-        writer.writeheader()
-        
+    with open('results/dolphins_benchmark_inference.json', 'w') as file:
         # 遍历JSON数据
         for entry in data:
             instruction = ''
             ground_truth = ''
+            unique_id = entry["id"]
             video_path = entry['video_path'][entry['video_path'].find('/')+1:]
             task_name = entry['task_name']
+            label = entry['label']
             # 从conversations中提取human的value和gpt的value
             for conversation in entry['conversations']:
                 if conversation['from'] == 'human':
@@ -179,16 +177,13 @@ if __name__ == "__main__":
             print(f"\n{video_path}\n")
             print(f"\n\ninstruction: {instruction}\ndolphins answer: {content_after_last_answer}\n\n")
 
-            # 写入CSV行数据
-            writer.writerow(
-                {
-                    'task_name': task_name,
-                    'video_path': video_path, 
-                    'instruction': instruction, 
-                    'ground_truth': ground_truth, 
-                    'dolphins_inference': content_after_last_answer,
-                }
+            # 写入json行数据
+            file.write(
+                json.dumps({
+                    "unique_id": unique_id,
+                    "task_name": task_name,
+                    "pred": content_after_last_answer,
+                    "gt": ground_truth,
+                    "label": label
+                }) + "\n"
             )
-
-
-

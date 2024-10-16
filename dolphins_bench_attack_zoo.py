@@ -324,16 +324,14 @@ if __name__ == "__main__":
     # 初始化进度条，设置position=0以确保它在最底部
     progress_bar = tqdm(total=len(data), position=0)
 
-    with open(f'csvfiles/dolphins_benchmark_attack_zoo_{LR}_{ITER}_{args.opt}.csv', 'w') as file:
-        fieldnames = ['task_name', 'video_path', 'instruction', 'ground_truth', 'dolphins_inference']
-        writer = csv.DictWriter(file, fieldnames=fieldnames)
-        writer.writeheader()
-        
+    with open(f'results/dolphins_benchmark_attack_zoo_{LR}_{ITER}_{args.opt}.json', 'w') as file:
         iter_num = 0
         # 遍历JSON数据
         for entry in data:
             instruction = ''
             ground_truth = ''
+            unique_id = entry["id"]
+            label = entry['label']
             video_path = entry['video_path'][entry['video_path'].find('/')+1:]
             task_name = entry['task_name']
 
@@ -397,15 +395,15 @@ if __name__ == "__main__":
             print(f"\n{video_path}\n")
             print(f"\n\ninstruction: {instruction}\ndolphins answer: {content_after_last_answer}\n\n")
 
-            # 写入CSV行数据
-            writer.writerow(
-                {
-                    'task_name': task_name,
-                    'video_path': video_path, 
-                    'instruction': instruction, 
-                    'ground_truth': ground_truth, 
-                    'dolphins_inference': content_after_last_answer,
-                }
+            # 写入json行数据
+            file.write(
+                json.dumps({
+                    "unique_id": unique_id,
+                    "task_name": task_name,
+                    "pred": content_after_last_answer,
+                    "gt": ground_truth,
+                    "label": label
+                }) + "\n"
             )
 
             # 每次迭代更新进度条

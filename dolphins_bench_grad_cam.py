@@ -174,15 +174,13 @@ if __name__ == "__main__":
         data = json.load(file)
     # random.shuffle(data)
 
-    with open('csvfiles/grad_cam.csv', 'w') as file:
-        fieldnames = ['task_name', 'video_path', 'instruction', 'ground_truth', 'dolphins_inference']
-        writer = csv.DictWriter(file, fieldnames=fieldnames)
-        writer.writeheader()
-        
+    with open('results/grad_cam.json', 'w') as file:
         # 遍历JSON数据
         for entry in data:
             instruction = ''
             ground_truth = ''
+            unique_id = entry["id"]
+            label = entry['label']
             video_path = entry['video_path'][entry['video_path'].find('/')+1:]
             task_name = entry['task_name']
             # 从conversations中提取human的value和gpt的value
@@ -223,15 +221,15 @@ if __name__ == "__main__":
             print(f"\n{video_path}\n")
             print(f"\n\ninstruction: {instruction}\ndolphins answer: {content_after_last_answer}\n\n")
 
-            # 写入CSV行数据
-            writer.writerow(
-                {
-                    'task_name': task_name,
-                    'video_path': video_path, 
-                    'instruction': instruction, 
-                    'ground_truth': ground_truth, 
-                    'dolphins_inference': content_after_last_answer,
-                }
+            # 写入json行数据
+            file.write(
+                json.dumps({
+                    "unique_id": unique_id,
+                    "task_name": task_name,
+                    "pred": content_after_last_answer,
+                    "gt": ground_truth,
+                    "label": label
+                }) + "\n"
             )
 
 
