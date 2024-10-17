@@ -131,17 +131,20 @@ class Evaluation():
 
     def forward(self, unique_id, answer, GT, label=None):
         scores = {}
-        if label is not None and unique_id in self.chatgpt_scores.keys():
+        # if label is not None and unique_id in self.chatgpt_scores.keys():
+        scores["chatgpt"] = self.eval_chatGPT(unique_id, answer, GT)
+        if label is not None:
             scores["accuracy"] = self.eval_acc(unique_id, answer, label)
-            scores["chatgpt"] = self.eval_chatGPT(unique_id, answer, GT)
-            
-        elif label is not None:
-            scores["accuracy"] = self.eval_acc(unique_id, answer, label)
-            scores["chatgpt"] = scores["accuracy"]
-            
-        elif unique_id in self.chatgpt_scores.keys():
-            scores["chatgpt"] = self.eval_chatGPT(unique_id, answer, GT)
+        else:
             scores["accuracy"] = scores["chatgpt"]
+            
+        # elif label is not None:
+        #     scores["accuracy"] = self.eval_acc(unique_id, answer, label)
+        #     scores["chatgpt"] = scores["accuracy"]
+            
+        # elif unique_id in self.chatgpt_scores.keys():
+        #     scores["chatgpt"] = self.eval_chatGPT(unique_id, answer, GT)
+        #     scores["accuracy"] = scores["chatgpt"]
             
         # scores["language"] = self.eval_language(answer, GT)
         return scores
