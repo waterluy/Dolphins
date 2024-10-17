@@ -235,7 +235,7 @@ def estimate_gradient_newt(model, vision_x, inputs, target_output, epsilon=1e-4)
     for n in range(vision_x.shape[2]):
         hessian[:, :, n, random_c[n], random_h[n], random_w[n]] = h
     
-    return grad.detach(), hessian.detach()
+    return gradient.detach(), hessian.detach()
 
 def adam_optimize(noise, grad, m, v, t, lr=0.01, beta1=0.9, beta2=0.999, epsilon=1e-8):
     """
@@ -288,7 +288,6 @@ def newton_optimize(noise, grad, hessian, lr=1e-3):
 
     # 创建 delta_star 数组
     delta_star = torch.zeros_like(noise)
-
     # 处理负 Hessian 的情况
     delta_star[~positive_hessian] = -lr * grad[~positive_hessian]
 
@@ -317,6 +316,12 @@ if __name__ == "__main__":
                                 'top_k': 0, 'top_p': 1, 'no_repeat_ngram_size': 3, 'length_penalty': 1,
                                 'do_sample': False,
                                 'early_stopping': True}
+    
+    ok_unique_id = []
+    json_path = f'results/dolphins_benchmark_attack_zoo_{LR}_{ITER}_{args.opt}.json'
+    with open(json_path, 'r') as file:
+        for line in file:
+            ok_unique_id.append(json.loads(line)['id'])
 
     with open('playground/dolphins_bench/dolphins_benchmark.json', 'r') as file:
         data = json.load(file)
@@ -324,7 +329,7 @@ if __name__ == "__main__":
     # 初始化进度条，设置position=0以确保它在最底部
     progress_bar = tqdm(total=len(data), position=0)
 
-    with open(f'results/dolphins_benchmark_attack_zoo_{LR}_{ITER}_{args.opt}.json', 'w') as file:
+    with open(json_path, 'w') as file:
         iter_num = 0
         # 遍历JSON数据
         for entry in data:
@@ -343,6 +348,11 @@ if __name__ == "__main__":
                     ground_truth = conversation['value']
             if instruction == '':
                 continue
+            
+            if unique_id in ok_unique_id:
+                continue
+            if unique_id not in ok_unique_id:
+                print(unique_id, video_path, instruction)
 
             tokenizer.eos_token_id = 50277
             tokenizer.pad_token_id = 50277
