@@ -1,6 +1,6 @@
 import sys
 
-sys.path.append("..")
+sys.path.append(".")
 
 import copy
 import json
@@ -504,7 +504,7 @@ if __name__ == "__main__":
     dataset = BDDXDataset(
         tokenizer=tokenizer,
         vis_root="/home/scratch.sysarch_nvresearch/chaowei/BDD-X/data/video/training_32frames_img_size256.img.tsv",
-        ann_paths=["/home/scratch.sysarch_nvresearch/chaowei/BDD-X/data/drive_caption/captions_BDDX_clean.json",],
+        ann_paths=["./captions_BDDX_clean.json",],
         max_seq_length=1024,
         mode="training",
         num_shots=3,

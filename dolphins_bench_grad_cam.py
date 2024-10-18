@@ -213,8 +213,26 @@ if __name__ == "__main__":
             last_answer_index = generated_text[0].rfind("<answer>")
             content_after_last_answer = generated_text[0][last_answer_index + len("<answer>"):]
             
-            # loss = loss_function(predicted_output=content_after_last_answer, target_output=ground_truth)
+            loss = loss_function(predicted_output=content_after_last_answer, target_output=ground_truth)
             loss = model.loss_for_cam
+            # labels = tokenizer(ground_truth, return_tensors="pt", padding="do_not_pad", truncation=True,
+            #                           max_length=1024, add_special_tokens=False).to(model.device)
+            # labels = labels["input_ids"]
+            # labels = torch.cat([torch.LongTensor([tokenizer.bos_token_id]), labels.squeeze(0), torch.LongTensor([tokenizer.eos_token_id])]).unsqueeze(0)
+            # labels[labels == tokenizer.pad_token_id] = -100
+            # labels[labels == tokenizer.eos_token] = -100
+            # labels[:, 0] = -100
+            # media_token_id = tokenizer("<image>", add_special_tokens=False)["input_ids"][-1]
+            # answer_token_id = tokenizer("<answer>", add_special_tokens=False)["input_ids"][-1]
+            # labels[labels == answer_token_id] = -100
+            # labels[labels == media_token_id] = -100
+            # loss = model(
+            #     vision_x=vision_x.half().cuda(),
+            #     lang_x=inputs["input_ids"].cuda(),
+            #     attention_mask=inputs["attention_mask"].cuda(),
+            #     labels=labels,
+            # )
+            # quit()
             cam = grad_cam.generate_cam(loss)
             grad_cam.save_cam_image(cam, vision_x.squeeze(), output_folder=os.path.join(save_folder, video_path[:video_path.rfind('/')]), image_name=video_path.split("/")[-1])
 
@@ -222,15 +240,15 @@ if __name__ == "__main__":
             print(f"\n\ninstruction: {instruction}\ndolphins answer: {content_after_last_answer}\n\n")
 
             # 写入json行数据
-            file.write(
-                json.dumps({
-                    "unique_id": unique_id,
-                    "task_name": task_name,
-                    "pred": content_after_last_answer,
-                    "gt": ground_truth,
-                    "label": label
-                }) + "\n"
-            )
+            # file.write(
+            #     json.dumps({
+            #         "unique_id": unique_id,
+            #         "task_name": task_name,
+            #         "pred": content_after_last_answer,
+            #         "gt": ground_truth,
+            #         "label": label
+            #     }) + "\n"
+            # )
 
 
 

@@ -7,6 +7,7 @@ sys.path.append("..")
 import argparse
 import glob
 import os
+os.sys.path.append("./")
 import gc
 import random
 import logging
@@ -355,7 +356,7 @@ def main():
         model, image_processor, tokenizer = create_model_and_transforms(
             clip_vision_encoder_path="ViT-L-14",
             clip_vision_encoder_pretrained="openai",
-            clip_vision_encoder_cache_dir="/home/yingzi/models/openai-clip-vit-large-patch14",
+            clip_vision_encoder_cache_dir="./cache/models/openai-clip-vit-large-patch14",
             lang_encoder_path=args.llm_path,
             tokenizer_path=args.llm_path,
             cross_attn_every_n_layers=args.cross_attn_every_n_layers,

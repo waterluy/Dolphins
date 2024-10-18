@@ -73,7 +73,7 @@ class GradCAM:
         print(loss)
         # 获取特征图和梯度
         activation = self.activations[-1].detach()  # 获取保存的特征图
-        print(activation)
+        print(activation)    # activation.shape: torch.Size([577, 48, 1024])
         gradients = self.gradients[-1].detach() * 1000000000  # 获取保存的梯度
         gradients = torch.nan_to_num(gradients)
         print(gradients)
@@ -83,7 +83,7 @@ class GradCAM:
         print(weights.sum())
 
         # 计算 Grad-CAM 权重和特征图的加权和
-        cam = (weights * activation).sum(dim=1)  # 加权求和，合并通道维度
+        cam = (weights * activation).sum(dim=0)  # 加权求和，合并【通道维度】
         # print(cam.shape)    # torch.Size([577, 1024])
         cam = F.relu(cam)  # 应用 ReLU 以消除负值
 
