@@ -70,21 +70,31 @@ class GradCAM:
         # 执行反向传播以获取梯度
         self.model.zero_grad()
         loss.backward()
+        print("loss:")
         print(loss)
+        print("\n")
         # 获取特征图和梯度
         activation = self.activations[-1].detach()  # 获取保存的特征图
+        print("activation:")
         print(activation)    # activation.shape: torch.Size([577, 48, 1024])
-        gradients = self.gradients[-1].detach() * 1000000000  # 获取保存的梯度
+        print("\n")
+        gradients = self.gradients[-1].detach()   # 获取保存的梯度
         gradients = torch.nan_to_num(gradients)
+        print("gradients:")
         print(gradients)
+        print("\n")
         # print(gradients.shape)  # torch.Size([577, 48, 1024])
         weights = gradients.mean(dim=(1, 2), keepdim=True)  # 对空间维度进行平均，得到权重
         # print(weights.shape)    # torch.Size([577, 1, 1])
-        print(weights.sum())
+        print("weights:")
+        print(weights.squeeze())
+        print("\n")
 
         # 计算 Grad-CAM 权重和特征图的加权和
         cam = (weights * activation).sum(dim=0)  # 加权求和，合并【通道维度】
-        # print(cam.shape)    # torch.Size([577, 1024])
+        print("cam.shape")
+        print(cam.shape)    # torch.Size([48, 1024])
+        print("\n")
         cam = F.relu(cam)  # 应用 ReLU 以消除负值
 
         # 归一化到 [0, 1] 范围
@@ -106,14 +116,22 @@ class GradCAM:
         assert image_tensor.dim() == 4, "输入图像张量必须为 (num, channels, height, width) 或 (channels, height, width) 格式"
 
         # 调整 CAM 尺寸以匹配图像
+        print("cam 0,1")
+        print(cam)
+        print("\n")
         cam = F.interpolate(cam.unsqueeze(0).unsqueeze(0), size=(image_tensor.shape[2], image_tensor.shape[3]), mode='bicubic', align_corners=False)
+        print("cam interpolated:")
+        print(cam)
+        print("\n")
         cam = cam.squeeze().cpu().numpy()
         cam = (cam * 255).astype(np.uint8)
 
         os.makedirs(output_folder, exist_ok=True)
         image_mean = torch.tensor(mean).view(3, 1, 1) # .cuda()
         image_std = torch.tensor(std).view(3, 1, 1) # .cuda()
+        print("cam 0,255")
         print(cam)
+        print("\n")
         # 对每张图像应用可视化
         for idx in range(image_tensor.shape[0]):
             heatmap = cv2.applyColorMap(cam, cv2.COLORMAP_JET)
