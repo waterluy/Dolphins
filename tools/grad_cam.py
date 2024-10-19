@@ -41,7 +41,7 @@ class GradCAM:
         # print(type(output[0]))  # <class 'torch.Tensor'>
         # print(output[0].shape)  # torch.Size([577, 48, 1024])
         # print(type(output[1]))  # <class 'NoneType'>
-        self.activations.append(output[0])
+        self.activations = [output[0]]
 
     def save_gradient(self, module, input, output):
         """
@@ -56,9 +56,9 @@ class GradCAM:
         # print(len(output))  # 1
         # print(type(output[0]))  # <class 'torch.Tensor'>
         # print(output[0].shape)  # torch.Size([577, 48, 1024])
-        self.gradients.append(output[0])
+        self.gradients = [output[0]]
 
-    def generate_cam(self, loss):
+    def generate_cam(self, loss, retain_graph=False):
         """
         计算 Grad-CAM 可视化图。
         
@@ -71,17 +71,21 @@ class GradCAM:
         # 执行反向传播以获取梯度
         self.model.zero_grad()
         # print("\nbackward\n")
-        loss.backward()
+        loss.backward(retain_graph=retain_graph)
         # print("loss:")
         # print(loss)
         # print("\n")
         # 获取特征图和梯度
-        activation = self.activations[-1].detach()  # 获取保存的特征图
+        if retain_graph:
+            activation = self.activations[-1]
+            gradients = self.gradients[-1]
+        else:
+            activation = self.activations[-1].detach()  # 获取保存的特征图
+            gradients = self.gradients[-1].detach()   # 获取保存的梯度
         # print("activation:")
         # print(activation)    # activation.shape: torch.Size([577, 16, 1024])
         # print(activation.shape)
         # print("\n")
-        gradients = self.gradients[-1].detach()   # 获取保存的梯度
         gradients = torch.nan_to_num(gradients)
         # print("gradients:")
         # print(gradients)
@@ -110,17 +114,16 @@ class GradCAM:
         # print("\n")
         side = int(sqrt(cam[0].size(0)))
         cam_frames = torch.stack([cam[i].view(side, side) for i in range(cam.size(0))])
-        # print(cam_frames.shape)
-        # print(cam.shape)  # torch.Size([32, 32])
+        # print(cam_frames.shape)   # torch.Size([16, 32, 32])
         cam_frames = F.interpolate(cam_frames.unsqueeze(0), size=(336, 336), mode='bicubic', align_corners=False)
         # print("cam_frames interpolated:")
         # print(cam_frames)
-        # print(cam_frames.shape)  # torch.Size([1, 1, 336, 336])
+        # print(cam_frames.shape)  # torch.Size([16, 336, 336])
         # print("\n")
 
         # 归一化到 [0, 1] 范围
-        cam_frames -= cam_frames.min()
-        cam_frames /= cam_frames.max()
+        cam_frames  = cam_frames - cam_frames.min()
+        cam_frames = cam_frames / cam_frames.max()
         cam_frames = cam_frames.squeeze()  # 去除多余的维度
 
         return cam_frames
@@ -140,8 +143,8 @@ class GradCAM:
         cam_frames = (cam_frames * 255).astype(np.uint8)
 
         os.makedirs(output_folder, exist_ok=True)
-        image_mean = torch.tensor(mean).view(3, 1, 1) # .cuda()
-        image_std = torch.tensor(std).view(3, 1, 1) # .cuda()
+        image_mean = torch.tensor(mean).view(3, 1, 1).to(image_tensor.device)
+        image_std = torch.tensor(std).view(3, 1, 1).to(image_tensor.device)
         # print("cam 0,255")
         # print(cam)
         # print("\n")
@@ -161,7 +164,7 @@ class GradCAM:
             img_np = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
 
             # 合成热力图与原始图像
-            superimposed_img = 0.75 * heatmap + img_np
+            superimposed_img = 0.80 * heatmap + img_np
             superimposed_img = superimposed_img / np.max(superimposed_img) * 255
             # superimposed_img = cv2.cvtColor(superimposed_img.astype(np.uint8), cv2.COLOR_BGR2RGB)
 
@@ -173,4 +176,5 @@ class GradCAM:
             # cv2.imwrite(os.path.join(output_folder, f"{image_name}_{idx}_ori_bgr2rgb.png"), cv2.cvtColor(img_np, cv2.COLOR_BGR2RGB))
             # cv2.imwrite(os.path.join(output_folder, f"{image_name}_{idx}_ori.png"), img_np)
             cv2.imwrite(os.path.join(output_folder, f"{image_name}_{idx}.png"), superimposed_img)
-        quit()
+
+            break

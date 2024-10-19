@@ -243,7 +243,7 @@ if __name__ == "__main__":
     json_path = f'results/dolphins_benchmark_attack_online_gpt_target_{LR}_{ITER}.json'
     with open(json_path, 'r') as file:
         for line in file:
-            ok_unique_id.append(json.loads(line)['id'])
+            ok_unique_id.append(json.loads(line)['unique_id'])
 
     # conversation_history = []
 

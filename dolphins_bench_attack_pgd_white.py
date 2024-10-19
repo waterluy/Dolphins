@@ -144,6 +144,8 @@ def pgd_attack(model, vision_x, inputs, epsilon=0.001, steps=10, lp='linf', dire
             delta = grad / torch.norm(grad, p=1)
         elif lp == 'l2':
             delta = grad / torch.norm(grad, p=2)
+        else:
+            raise ValueError('lp must be linf, l1 or l2')
         if dire == 'neg':
             noise = noise - alpha * delta
         else:
@@ -153,9 +155,9 @@ def pgd_attack(model, vision_x, inputs, epsilon=0.001, steps=10, lp='linf', dire
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--eps', type=float, default=0.01)
+    parser.add_argument('--eps', type=float, default=0.001)
     parser.add_argument('--steps', type=int, default=10)
-    parser.add_argument('--lp', type=str, default='l2', choices=['l1', 'l2', 'linf'])
+    parser.add_argument('--lp', type=str, default='linf', choices=['l1', 'l2', 'linf'])
     parser.add_argument('--dire', type=str, default='pos', choices=['pos', 'neg'])
     args = parser.parse_args()
     model, image_processor, tokenizer = load_pretrained_modoel()

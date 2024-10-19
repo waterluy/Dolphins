@@ -151,13 +151,19 @@ class Evaluation():
     
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--result', type=str, default=None)
+    args = parser.parse_args()
     benchmark_file = "./playground/dolphins_bench/dolphins_benchmark.json"
     # result_file = "results/dolphins_benchmark_attack_online_gpt_target_0.json"
-    result_file = 'playground/dolphins_bench/results/dolphins/dolphins_results.json'
+    # result_file = 'playground/dolphins_bench/results/dolphins/dolphins_results.json'
     chatgpt_score_file = "playground/dolphins_bench/results/dolphins/dolphins_scores.json"
+    result_file = args.result
     
     task_num = defaultdict(lambda: 0)
     task_scores = defaultdict(list)
+
+    fp = open(result_file.replace('json', 'txt'), "w")
     
     with open(benchmark_file, "r") as f:
         dolphins_bench = json.load(f) 
@@ -176,11 +182,12 @@ if __name__ == '__main__':
             line['task_name'] = line['task_name'] + "_" + line['label']
         
     print(len(results))
+    fp.write(str(len(results)) + "\n")
    
-    with open(chatgpt_score_file, "r") as f:
-        chatgpt_scores = [json.loads(line) for line in f.readlines()]
-        chatgpt_scores = {line['unique_id']: float(line['scores'].split("\n")[0].strip(" ")) for line in chatgpt_scores}
-    # chatgpt_scores = None
+    # with open(chatgpt_score_file, "r") as f:
+    #     chatgpt_scores = [json.loads(line) for line in f.readlines()]
+    #     chatgpt_scores = {line['unique_id']: float(line['scores'].split("\n")[0].strip(" ")) for line in chatgpt_scores}
+    chatgpt_scores = None
     
     evaluation = Evaluation(chatgpt_scores=chatgpt_scores)
     outputs = defaultdict(lambda: {"accuracy": [], "chatgpt": [], "language": []})
@@ -216,6 +223,7 @@ if __name__ == '__main__':
                 
     for task_name in outputs.keys():
         print(f"========{task_name}========")
+        fp.write(f"========{task_name}========" + "\n")
         output = outputs[task_name]
         preds = {line['unique_id']: [line['pred']] for line in results if line['task_name'] == task_name}
         gts = {line['unique_id']: [line['gt']] for line in results if line['task_name'] == task_name}
@@ -225,14 +233,17 @@ if __name__ == '__main__':
         language_score = evaluation.eval_language(preds, gts)
       
         print("language: ", language_score)
+        fp.write("language: "+str(language_score)+"\n")
         if len(output["accuracy"]) != 0:
             output["accuracy"] = sum(output["accuracy"]) / len(output["accuracy"])
             print("accuracy: ", output["accuracy"])
+            fp.write("accuracy: "+str(output["accuracy"])+"\n")
         else:
             output["accuracy"] = 0.0
         if len(output["chatgpt"]) != 0:
             output["chatgpt"] = sum(output["chatgpt"]) / len(output["chatgpt"])
             print("chatgpt: ", output["chatgpt"])
+            fp.write("chatgpt: "+str(output["chatgpt"])+"\n")
         else:
             output["chatgpt"] = 0.0
         
@@ -271,8 +282,12 @@ if __name__ == '__main__':
         print(
             f"{task} weighted score: {weighted_average}"
         )
+        fp.write(f"{task} weighted score: {weighted_average}\n")
 
     print(final_scores)
+    fp.write(str(final_scores)+"\n")
     print(task_instance_num)
+    fp.write(str(task_instance_num)+"\n")
+    fp.close()
 
  

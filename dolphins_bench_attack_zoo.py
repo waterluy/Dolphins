@@ -321,7 +321,7 @@ if __name__ == "__main__":
     json_path = f'results/dolphins_benchmark_attack_zoo_{LR}_{ITER}_{args.opt}.json'
     with open(json_path, 'r') as file:
         for line in file:
-            ok_unique_id.append(json.loads(line)['id'])
+            ok_unique_id.append(json.loads(line)['unique_id'])
 
     with open('playground/dolphins_bench/dolphins_benchmark.json', 'r') as file:
         data = json.load(file)
@@ -329,7 +329,7 @@ if __name__ == "__main__":
     # 初始化进度条，设置position=0以确保它在最底部
     progress_bar = tqdm(total=len(data), position=0)
 
-    with open(json_path, 'w') as file:
+    with open(json_path, 'a') as file:
         iter_num = 0
         # 遍历JSON数据
         for entry in data:
