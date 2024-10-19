@@ -124,28 +124,38 @@ def get_model_inputs(video_path, instruction, model, image_processor, tokenizer)
 
     return vision_x, inputs
 
-def fgsm_attack(model, vision_x, inputs, epsilon=0.001, dire='pos'):
+def pgd_attack(model, vision_x, inputs, epsilon=0.001, steps=10, lp='linf', dire='pos'):
     noise = torch.zeros_like(vision_x).to(device).half().cuda()
-    noise.requires_grad = True
-    loss = model(
-        vision_x=(vision_x).half().cuda() + noise,
-        lang_x=inputs["input_ids"].cuda(),
-        attention_mask=inputs["attention_mask"].cuda(),
-        labels=None,
-    )
-    # print(loss.logits.shape)    # torch.Size([1, 20, 50281])
-    loss = torch.norm(loss.logits, p=2)
-    loss.backward()
-    grad = noise.grad.detach()
-    if dire == 'neg':
-        noise = noise - epsilon * grad.sign()
-    else:
-        noise = noise + epsilon * grad.sign()
+    alpha = epsilon / steps
+    for _ in range(steps):
+        noise.requires_grad = True
+        loss = model(
+            vision_x=(vision_x).half().cuda() + noise,
+            lang_x=inputs["input_ids"].cuda(),
+            attention_mask=inputs["attention_mask"].cuda(),
+            labels=None,
+        )
+        loss = torch.norm(loss.logits, p=2)
+        loss.backward()
+        grad = noise.grad.detach()
+        if lp == 'linf':
+            delta = grad.sign()
+        elif lp == 'l1':
+            delta = grad / torch.norm(grad, p=1)
+        elif lp == 'l2':
+            delta = grad / torch.norm(grad, p=2)
+        if dire == 'neg':
+            noise = noise - alpha * delta
+        else:
+            noise = noise + alpha * delta
+        noise = noise.detach()
     return noise.detach()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--eps', type=float, default=0.01)
+    parser.add_argument('--steps', type=int, default=10)
+    parser.add_argument('--lp', type=str, default='l2', choices=['l1', 'l2', 'linf'])
     parser.add_argument('--dire', type=str, default='pos', choices=['pos', 'neg'])
     args = parser.parse_args()
     model, image_processor, tokenizer = load_pretrained_modoel()
@@ -156,7 +166,7 @@ if __name__ == "__main__":
                                 'top_k': 0, 'top_p': 1, 'no_repeat_ngram_size': 3, 'length_penalty': 1,
                                 'do_sample': False,
                                 'early_stopping': True}
-    json_file = f'results/bench_attack_fgsm_white_eps{args.eps}_dire{args.dire}.json'
+    json_file = f'results/bench_attack_pgd_white_{args.lp}_eps{args.eps}_steps{args.steps}_{args.dire}.json'
     with open('playground/dolphins_bench/dolphins_benchmark.json', 'r') as file:
         data = json.load(file)
     # random.shuffle(data)
@@ -183,10 +193,10 @@ if __name__ == "__main__":
             tokenizer.pad_token_id = 50277
 
             vision_x, inputs = get_model_inputs(video_path, instruction, model, image_processor, tokenizer)
-            print(vision_x.shape)   # torch.Size([1, 1, 16, 3, 336, 336])
+            # print(vision_x.shape)   # torch.Size([1, 1, 16, 3, 336, 336])
 
-            # fgsm attack
-            noise = fgsm_attack(model=model, inputs=inputs, vision_x=vision_x, epsilon=args.eps, dire=args.dire)
+            # pgd attack
+            noise = pgd_attack(model=model, inputs=inputs, vision_x=vision_x, epsilon=args.eps, steps=args.steps, lp=args.lp, dire=args.dire)
 
             # inference
             generated_tokens = model.generate(

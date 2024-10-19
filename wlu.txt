@@ -1,2 +1,4 @@
 export CUDA_VISIBLE_DEVICES=6
 
+pgd attack
+python dolphins_bench_attack_pgd_white.py --eps 0.001 --steps 10 --lp linf --dire pos
