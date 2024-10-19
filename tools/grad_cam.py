@@ -3,6 +3,7 @@ import os
 import torch.nn.functional as F
 import numpy as np
 import torch
+from math import sqrt
 
 mean = [0.48145466, 0.4578275, 0.40821073] 
 std = [0.26862954, 0.26130258, 0.27577711]
@@ -51,10 +52,10 @@ class GradCAM:
             input: 层的输入张量。
             output: torch.Tensor，层的输出梯度，维度为 (channel, channels, height, width)。
         """
-        # print(type(output)) # <class 'tuple'>
-        # print(len(output))  # 1
-        # print(type(output[0]))  # <class 'torch.Tensor'>
-        # print(output[0].shape)  # torch.Size([577, 48, 1024])
+        print(type(output)) # <class 'tuple'>
+        print(len(output))  # 1
+        print(type(output[0]))  # <class 'torch.Tensor'>
+        print(output[0].shape)  # torch.Size([577, 48, 1024])
         self.gradients.append(output[0])
 
     def generate_cam(self, loss):
@@ -69,41 +70,61 @@ class GradCAM:
         """
         # 执行反向传播以获取梯度
         self.model.zero_grad()
+        print("\nbackward\n")
         loss.backward()
-        print("loss:")
-        print(loss)
-        print("\n")
+        # print("loss:")
+        # print(loss)
+        # print("\n")
         # 获取特征图和梯度
         activation = self.activations[-1].detach()  # 获取保存的特征图
-        print("activation:")
-        print(activation)    # activation.shape: torch.Size([577, 48, 1024])
-        print("\n")
+        # print("activation:")
+        # print(activation)    # activation.shape: torch.Size([577, 16, 1024])
+        # print(activation.shape)
+        # print("\n")
         gradients = self.gradients[-1].detach()   # 获取保存的梯度
         gradients = torch.nan_to_num(gradients)
-        print("gradients:")
-        print(gradients)
-        print("\n")
-        # print(gradients.shape)  # torch.Size([577, 48, 1024])
-        weights = gradients.mean(dim=(1, 2), keepdim=True)  # 对空间维度进行平均，得到权重
-        # print(weights.shape)    # torch.Size([577, 1, 1])
-        print("weights:")
-        print(weights.squeeze())
-        print("\n")
+        # print("gradients:")
+        # print(gradients)
+        # print("\n")
+        # print(gradients.shape)  # torch.Size([577, 16, 1024])
+        weights = gradients.mean(dim=(2), keepdim=True)  # 对空间维度进行平均，得到权重
+        # print(weights.shape)    # torch.Size([577, 16, 1])
+        # print("weights:")
+        # print(weights.squeeze())
+        # print("\n")
 
         # 计算 Grad-CAM 权重和特征图的加权和
         cam = (weights * activation).sum(dim=0)  # 加权求和，合并【通道维度】
-        print("cam.shape")
-        print(cam.shape)    # torch.Size([48, 1024])
-        print("\n")
+        # print("cam.shape")
+        # print(cam.shape)    # torch.Size([16, 1024])
+        # print("\n")
         cam = F.relu(cam)  # 应用 ReLU 以消除负值
 
-        # 归一化到 [0, 1] 范围
-        cam -= cam.min()
-        cam /= cam.max()
-        cam = cam.squeeze()  # 去除多余的维度
+        # 调整 CAM 尺寸以匹配图像
+        # print("cam 0,1")
+        # print(cam)
+        # print(cam.shape)
+        # tmp = cv2.applyColorMap((255 * cam.squeeze().cpu().numpy()).astype(np.uint8), cv2.COLORMAP_JET)
+        # tmp = cv2.resize(tmp, (336, 336))
+        # cv2.imwrite(os.path.join("grad_cam_images11", 'tmp.png'), tmp)
+        # print("\n")
+        side = int(sqrt(cam[0].size(0)))
+        cam_frames = torch.stack([cam[i].view(side, side) for i in range(cam.size(0))])
+        print(cam_frames.shape)
+        # print(cam.shape)  # torch.Size([32, 32])
+        cam_frames = F.interpolate(cam_frames.unsqueeze(0), size=(336, 336), mode='bicubic', align_corners=False)
+        # print("cam_frames interpolated:")
+        # print(cam_frames)
+        print(cam_frames.shape)  # torch.Size([1, 1, 336, 336])
+        # print("\n")
 
-        return cam
-    def save_cam_image(self, cam, image_tensor, output_folder, image_name):
+        # 归一化到 [0, 1] 范围
+        cam_frames -= cam_frames.min()
+        cam_frames /= cam_frames.max()
+        cam_frames = cam_frames.squeeze()  # 去除多余的维度
+
+        return cam_frames
+    def save_cam_image(self, cam_frames, image_tensor, output_folder, image_name):
         """保存 Grad-CAM 热力图覆盖在原始图像上的结果。
         
         Args:
@@ -115,26 +136,21 @@ class GradCAM:
             image_tensor = image_tensor.unsqueeze(0)  # 如果只有一张图像，将其升维为 (1, channels, height, width)
         assert image_tensor.dim() == 4, "输入图像张量必须为 (num, channels, height, width) 或 (channels, height, width) 格式"
 
-        # 调整 CAM 尺寸以匹配图像
-        print("cam 0,1")
-        print(cam)
-        print("\n")
-        cam = F.interpolate(cam.unsqueeze(0).unsqueeze(0), size=(image_tensor.shape[2], image_tensor.shape[3]), mode='bicubic', align_corners=False)
-        print("cam interpolated:")
-        print(cam)
-        print("\n")
-        cam = cam.squeeze().cpu().numpy()
-        cam = (cam * 255).astype(np.uint8)
+        cam_frames = cam_frames.squeeze().cpu().numpy()
+        cam_frames = (cam_frames * 255).astype(np.uint8)
 
         os.makedirs(output_folder, exist_ok=True)
         image_mean = torch.tensor(mean).view(3, 1, 1) # .cuda()
         image_std = torch.tensor(std).view(3, 1, 1) # .cuda()
-        print("cam 0,255")
-        print(cam)
-        print("\n")
+        # print("cam 0,255")
+        # print(cam)
+        # print("\n")
         # 对每张图像应用可视化
         for idx in range(image_tensor.shape[0]):
-            heatmap = cv2.applyColorMap(cam, cv2.COLORMAP_JET)
+            heatmap = cv2.applyColorMap(cam_frames[idx], cv2.COLORMAP_JET)
+            # print("heatmap:")
+            # print(heatmap)
+            # print("\n")
             # heatmap = cv2.cvtColor(heatmap, cv2.COLOR_BGR2RGB)
 
             # 提取当前图像张量并转换为图像格式
@@ -145,16 +161,16 @@ class GradCAM:
             img_np = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
 
             # 合成热力图与原始图像
-            superimposed_img = heatmap + img_np
+            superimposed_img = 0.75 * heatmap + img_np
             superimposed_img = superimposed_img / np.max(superimposed_img) * 255
             # superimposed_img = cv2.cvtColor(superimposed_img.astype(np.uint8), cv2.COLOR_BGR2RGB)
 
             # 保存图像到本地
-            cv2.imwrite(os.path.join(output_folder, f"{image_name}_{idx}_hm_bgr2rgb.png"), cv2.cvtColor(heatmap, cv2.COLOR_BGR2RGB))
-            cv2.imwrite(os.path.join(output_folder, f"{image_name}_{idx}_hm_rgb2bgr.png"), cv2.cvtColor(heatmap, cv2.COLOR_RGB2BGR))
-            cv2.imwrite(os.path.join(output_folder, f"{image_name}_{idx}_hm.png"), heatmap)
-            cv2.imwrite(os.path.join(output_folder, f"{image_name}_{idx}_ori_rgb2bgr.png"), cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR))
-            cv2.imwrite(os.path.join(output_folder, f"{image_name}_{idx}_ori_bgr2rgb.png"), cv2.cvtColor(img_np, cv2.COLOR_BGR2RGB))
-            cv2.imwrite(os.path.join(output_folder, f"{image_name}_{idx}_ori.png"), img_np)
+            # cv2.imwrite(os.path.join(output_folder, f"{image_name}_{idx}_hm_bgr2rgb.png"), cv2.cvtColor(heatmap, cv2.COLOR_BGR2RGB))
+            # cv2.imwrite(os.path.join(output_folder, f"{image_name}_{idx}_hm_rgb2bgr.png"), cv2.cvtColor(heatmap, cv2.COLOR_RGB2BGR))
+            # cv2.imwrite(os.path.join(output_folder, f"{image_name}_{idx}_hm.png"), heatmap)
+            # cv2.imwrite(os.path.join(output_folder, f"{image_name}_{idx}_ori_rgb2bgr.png"), cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR))
+            # cv2.imwrite(os.path.join(output_folder, f"{image_name}_{idx}_ori_bgr2rgb.png"), cv2.cvtColor(img_np, cv2.COLOR_BGR2RGB))
+            # cv2.imwrite(os.path.join(output_folder, f"{image_name}_{idx}_ori.png"), img_np)
             cv2.imwrite(os.path.join(output_folder, f"{image_name}_{idx}.png"), superimposed_img)
-            quit()
+        quit()

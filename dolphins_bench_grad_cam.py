@@ -162,7 +162,7 @@ if __name__ == "__main__":
     # with open('tmp.txt', mode='w') as file:
     #     for name, module in model.named_modules():
     #         file.write(f"{name}\n")
-    target_layer_name = 'vision_encoder.transformer.resblocks.11.attn'
+    target_layer_name = 'vision_encoder.transformer.resblocks.23.attn'
     grad_cam = GradCAM(model, target_layer_name)
 
     generation_kwargs = {'max_new_tokens': 512, 'temperature': 1,
@@ -196,25 +196,26 @@ if __name__ == "__main__":
             tokenizer.pad_token_id = 50277
 
             vision_x, inputs = get_model_inputs(video_path, instruction, model, image_processor, tokenizer)
+            print(vision_x.shape)
+            # generated_tokens = model.generate(
+            #     vision_x=vision_x.half().cuda(),
+            #     lang_x=inputs["input_ids"].cuda(),
+            #     attention_mask=inputs["attention_mask"].cuda(),
+            #     num_beams=3,
+            #     **generation_kwargs,
+            # )
 
-            generated_tokens = model.generate(
-                vision_x=vision_x.half().cuda(),
-                lang_x=inputs["input_ids"].cuda(),
-                attention_mask=inputs["attention_mask"].cuda(),
-                num_beams=3,
-                **generation_kwargs,
-            )
+            # generated_tokens = generated_tokens.cpu().numpy()
+            # if isinstance(generated_tokens, tuple):
+            #     generated_tokens = generated_tokens[0]
 
-            generated_tokens = generated_tokens.cpu().numpy()
-            if isinstance(generated_tokens, tuple):
-                generated_tokens = generated_tokens[0]
-
-            generated_text = tokenizer.batch_decode(generated_tokens)
-            last_answer_index = generated_text[0].rfind("<answer>")
-            content_after_last_answer = generated_text[0][last_answer_index + len("<answer>"):]
+            # generated_text = tokenizer.batch_decode(generated_tokens)
+            # last_answer_index = generated_text[0].rfind("<answer>")
+            # content_after_last_answer = generated_text[0][last_answer_index + len("<answer>"):]
             
-            loss = loss_function(predicted_output=content_after_last_answer, target_output=ground_truth)
-            loss = model.loss_for_cam
+            # loss = loss_function(predicted_output=content_after_last_answer, target_output=ground_truth)
+            # loss = model.loss_for_cam
+
             # labels = tokenizer(ground_truth, return_tensors="pt", padding="do_not_pad", truncation=True,
             #                           max_length=1024, add_special_tokens=False).to(model.device)
             # labels = labels["input_ids"]
@@ -226,18 +227,19 @@ if __name__ == "__main__":
             # answer_token_id = tokenizer("<answer>", add_special_tokens=False)["input_ids"][-1]
             # labels[labels == answer_token_id] = -100
             # labels[labels == media_token_id] = -100
-            # loss = model(
-            #     vision_x=vision_x.half().cuda(),
-            #     lang_x=inputs["input_ids"].cuda(),
-            #     attention_mask=inputs["attention_mask"].cuda(),
-            #     labels=labels,
-            # )
-            # quit()
+            loss = model(
+                vision_x=vision_x.half().cuda(),
+                lang_x=inputs["input_ids"].cuda(),
+                attention_mask=inputs["attention_mask"].cuda(),
+                labels=None,
+            )
+            loss = torch.norm(loss.logits, p=2)
+            # loss = loss.logits.max()
             cam = grad_cam.generate_cam(loss)
             grad_cam.save_cam_image(cam, vision_x.squeeze(), output_folder=os.path.join(save_folder, video_path[:video_path.rfind('/')]), image_name=video_path.split("/")[-1])
 
-            print(f"\n{video_path}\n")
-            print(f"\n\ninstruction: {instruction}\ndolphins answer: {content_after_last_answer}\n\n")
+            # print(f"\n{video_path}\n")
+            # print(f"\n\ninstruction: {instruction}\ndolphins answer: {content_after_last_answer}\n\n")
 
             # 写入json行数据
             # file.write(
