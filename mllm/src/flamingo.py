@@ -60,6 +60,7 @@ class Flamingo(nn.Module):
         self.device = self.lang_encoder.device
         self.grad_cam = False
         self.loss_for_cam = None
+        self.attack = True
 
     def forward(
         self,
@@ -219,7 +220,7 @@ class Flamingo(nn.Module):
         # assert F == 1, "Only single frame supported"
 
         vision_x = rearrange(vision_x, "b T F c h w -> (b T F) c h w")
-        if self.grad_cam:
+        if self.attack:
             vision_x = self.vision_encoder(vision_x)[1]
         else:
             with torch.no_grad():

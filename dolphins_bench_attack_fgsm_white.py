@@ -32,7 +32,6 @@ from peft import (
     PeftConfig,
     PeftModel
 )
-from tools.grad_cam import GradCAM
 
 def setup_seed(seed):
     torch.manual_seed(seed)
@@ -125,56 +124,44 @@ def get_model_inputs(video_path, instruction, model, image_processor, tokenizer)
 
     return vision_x, inputs
 
-def loss_function(predicted_output, target_output):
-    """
-    计算模型输出与目标输出之间的损失。
-    
-    参数：
-    predicted_output: 模型生成的文本输出
-    target_output: 目标文本输出(ground truth)
-    
-    返回：
-    loss: 计算得到的损失值
-    """
-    import clip
-    import torch.nn.functional as F
-    from torchvision import transforms
-    model_clip, preprocess_clip = clip.load("ViT-B/32", device=model.device) 
-    predicted_text_features = model_clip.encode_text(clip.tokenize(predicted_output, truncate=True).to(device)).to(device)
-    predicted_text_features_normed = F.normalize(predicted_text_features, dim=-1)
-    target_text_features = model_clip.encode_text(clip.tokenize(target_output, truncate=True).to(device)).to(device)
-    target_text_features_normed = F.normalize(target_text_features, dim=-1)
-    
-    # print(predicted_text_features_normed.shape, target_text_features_normed.shape)
-    # print(torch.cosine_similarity(predicted_text_features_normed, target_text_features_normed, eps=1e-8))
-    loss = torch.cosine_similarity(predicted_text_features_normed, target_text_features_normed, eps=1e-8).mean()  # 最大化相似度
-    
-    return loss
-
-
+def fgsm_attack(model, vision_x, inputs, epsilon=0.001, dire='pos'):
+    noise = torch.zeros_like(vision_x).to(device).half().cuda()
+    noise.requires_grad = True
+    loss = model(
+        vision_x=(vision_x).half().cuda() + noise,
+        lang_x=inputs["input_ids"].cuda(),
+        attention_mask=inputs["attention_mask"].cuda(),
+        labels=None,
+    )
+    # print(loss.logits.shape)    # torch.Size([1, 20, 50281])
+    loss = torch.norm(loss.logits, p=2)
+    loss.backward()
+    grad = noise.grad.detach()
+    if dire == 'neg':
+        noise = noise - epsilon * grad.sign()
+    else:
+        noise = noise + epsilon * grad.sign()
+    return noise.detach()
 
 if __name__ == "__main__":
-    save_folder = "./grad_cam_images11"
-
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--eps', type=float, default=0.01)
+    parser.add_argument('--dire', type=str, default='pos', choices=['pos', 'neg'])
+    args = parser.parse_args()
     model, image_processor, tokenizer = load_pretrained_modoel()
     device = model.device
     model.attack = True
-    # with open('tmp.txt', mode='w') as file:
-    #     for name, module in model.named_modules():
-    #         file.write(f"{name}\n")
-    target_layer_name = 'vision_encoder.transformer.resblocks.23.attn'
-    grad_cam = GradCAM(model, target_layer_name)
 
     generation_kwargs = {'max_new_tokens': 512, 'temperature': 1,
                                 'top_k': 0, 'top_p': 1, 'no_repeat_ngram_size': 3, 'length_penalty': 1,
                                 'do_sample': False,
                                 'early_stopping': True}
-
+    json_file = f'results/bench_attack_fgsm_white_eps{args.eps}_dire{args.dire}.json'
     with open('playground/dolphins_bench/dolphins_benchmark.json', 'r') as file:
         data = json.load(file)
     # random.shuffle(data)
 
-    with open('results/grad_cam.json', 'w') as file:
+    with open(json_file, 'w') as file:
         # 遍历JSON数据
         for entry in data:
             instruction = ''
@@ -196,61 +183,40 @@ if __name__ == "__main__":
             tokenizer.pad_token_id = 50277
 
             vision_x, inputs = get_model_inputs(video_path, instruction, model, image_processor, tokenizer)
-            print(vision_x.shape)
-            # generated_tokens = model.generate(
-            #     vision_x=vision_x.half().cuda(),
-            #     lang_x=inputs["input_ids"].cuda(),
-            #     attention_mask=inputs["attention_mask"].cuda(),
-            #     num_beams=3,
-            #     **generation_kwargs,
-            # )
+            print(vision_x.shape)   # torch.Size([1, 1, 16, 3, 336, 336])
 
-            # generated_tokens = generated_tokens.cpu().numpy()
-            # if isinstance(generated_tokens, tuple):
-            #     generated_tokens = generated_tokens[0]
+            # fgsm attack
+            noise = fgsm_attack(model=model, inputs=inputs, vision_x=vision_x, epsilon=args.eps, dire=args.dire)
 
-            # generated_text = tokenizer.batch_decode(generated_tokens)
-            # last_answer_index = generated_text[0].rfind("<answer>")
-            # content_after_last_answer = generated_text[0][last_answer_index + len("<answer>"):]
-            
-            # loss = loss_function(predicted_output=content_after_last_answer, target_output=ground_truth)
-            # loss = model.loss_for_cam
-
-            # labels = tokenizer(ground_truth, return_tensors="pt", padding="do_not_pad", truncation=True,
-            #                           max_length=1024, add_special_tokens=False).to(model.device)
-            # labels = labels["input_ids"]
-            # labels = torch.cat([torch.LongTensor([tokenizer.bos_token_id]), labels.squeeze(0), torch.LongTensor([tokenizer.eos_token_id])]).unsqueeze(0)
-            # labels[labels == tokenizer.pad_token_id] = -100
-            # labels[labels == tokenizer.eos_token] = -100
-            # labels[:, 0] = -100
-            # media_token_id = tokenizer("<image>", add_special_tokens=False)["input_ids"][-1]
-            # answer_token_id = tokenizer("<answer>", add_special_tokens=False)["input_ids"][-1]
-            # labels[labels == answer_token_id] = -100
-            # labels[labels == media_token_id] = -100
-            loss = model(
-                vision_x=vision_x.half().cuda(),
+            # inference
+            generated_tokens = model.generate(
+                vision_x=vision_x.half().cuda() + noise,
                 lang_x=inputs["input_ids"].cuda(),
                 attention_mask=inputs["attention_mask"].cuda(),
-                labels=None,
+                num_beams=3,
+                **generation_kwargs,
             )
-            loss = torch.norm(loss.logits, p=2)
-            # loss = loss.logits.max()
-            cam = grad_cam.generate_cam(loss)
-            grad_cam.save_cam_image(cam, vision_x.squeeze(), output_folder=os.path.join(save_folder, video_path[:video_path.rfind('/')]), image_name=video_path.split("/")[-1])
 
-            # print(f"\n{video_path}\n")
-            # print(f"\n\ninstruction: {instruction}\ndolphins answer: {content_after_last_answer}\n\n")
+            generated_tokens = generated_tokens.cpu().numpy()
+            if isinstance(generated_tokens, tuple):
+                generated_tokens = generated_tokens[0]
 
+            generated_text = tokenizer.batch_decode(generated_tokens)
+            last_answer_index = generated_text[0].rfind("<answer>")
+            content_after_last_answer = generated_text[0][last_answer_index + len("<answer>"):]
+            
+            print(f"\n{video_path}\n")
+            print(f"\n\ninstruction: {instruction}\ndolphins answer: {content_after_last_answer}\n\n")
             # 写入json行数据
-            # file.write(
-            #     json.dumps({
-            #         "unique_id": unique_id,
-            #         "task_name": task_name,
-            #         "pred": content_after_last_answer,
-            #         "gt": ground_truth,
-            #         "label": label
-            #     }) + "\n"
-            # )
+            file.write(
+                json.dumps({
+                    "unique_id": unique_id,
+                    "task_name": task_name,
+                    "pred": content_after_last_answer,
+                    "gt": ground_truth,
+                    "label": label
+                }) + "\n"
+            )
 
 
 

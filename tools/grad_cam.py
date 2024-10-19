@@ -52,10 +52,10 @@ class GradCAM:
             input: 层的输入张量。
             output: torch.Tensor，层的输出梯度，维度为 (channel, channels, height, width)。
         """
-        print(type(output)) # <class 'tuple'>
-        print(len(output))  # 1
-        print(type(output[0]))  # <class 'torch.Tensor'>
-        print(output[0].shape)  # torch.Size([577, 48, 1024])
+        # print(type(output)) # <class 'tuple'>
+        # print(len(output))  # 1
+        # print(type(output[0]))  # <class 'torch.Tensor'>
+        # print(output[0].shape)  # torch.Size([577, 48, 1024])
         self.gradients.append(output[0])
 
     def generate_cam(self, loss):
@@ -70,7 +70,7 @@ class GradCAM:
         """
         # 执行反向传播以获取梯度
         self.model.zero_grad()
-        print("\nbackward\n")
+        # print("\nbackward\n")
         loss.backward()
         # print("loss:")
         # print(loss)
@@ -110,12 +110,12 @@ class GradCAM:
         # print("\n")
         side = int(sqrt(cam[0].size(0)))
         cam_frames = torch.stack([cam[i].view(side, side) for i in range(cam.size(0))])
-        print(cam_frames.shape)
+        # print(cam_frames.shape)
         # print(cam.shape)  # torch.Size([32, 32])
         cam_frames = F.interpolate(cam_frames.unsqueeze(0), size=(336, 336), mode='bicubic', align_corners=False)
         # print("cam_frames interpolated:")
         # print(cam_frames)
-        print(cam_frames.shape)  # torch.Size([1, 1, 336, 336])
+        # print(cam_frames.shape)  # torch.Size([1, 1, 336, 336])
         # print("\n")
 
         # 归一化到 [0, 1] 范围
