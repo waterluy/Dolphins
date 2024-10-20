@@ -156,12 +156,14 @@ if __name__ == "__main__":
                                 'top_k': 0, 'top_p': 1, 'no_repeat_ngram_size': 3, 'length_penalty': 1,
                                 'do_sample': False,
                                 'early_stopping': True}
-    json_file = f'results/bench_attack_fgsm_white_eps{args.eps}_dire{args.dire}.json'
+    folder = f'results/bench_attack_fgsm_white_eps{args.eps}_dire{args.dire}'
+    os.makedirs(folder, exist_ok=True)
+    json_path = os.path.join(folder, 'dolphin_oustput.json')
     with open('playground/dolphins_bench/dolphins_benchmark.json', 'r') as file:
         data = json.load(file)
     # random.shuffle(data)
 
-    with open(json_file, 'w') as file:
+    with open(json_path, 'w') as file:
         # 遍历JSON数据
         for entry in data:
             instruction = ''

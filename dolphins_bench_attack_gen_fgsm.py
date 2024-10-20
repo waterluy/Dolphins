@@ -125,7 +125,10 @@ def get_model_inputs(video_path, instruction, model, image_processor, tokenizer)
     return vision_x, inputs
 
 def fgsm_attack(model, vision_x, inputs, epsilon=0.001, dire='pos'):
-    noise = torch.zeros_like(vision_x).to(device).half().cuda()
+    if BLACK_NOISE is None:
+        noise = torch.zeros_like(vision_x).to(device).half().cuda()
+    else:
+        noise = BLACK_NOISE
     noise.requires_grad = True
     loss = model(
         vision_x=(vision_x).half().cuda() + noise,
@@ -160,12 +163,11 @@ if __name__ == "__main__":
                                 'top_k': 0, 'top_p': 1, 'no_repeat_ngram_size': 3, 'length_penalty': 1,
                                 'do_sample': False,
                                 'early_stopping': True}
-    json_file = f'results/bench_attack_fgsm_white_eps{args.eps}_dire{args.dire}.json'
+    
     with open('playground/dolphins_bench/dolphins_benchmark.json', 'r') as file:
         data = json.load(file)
 
     # 遍历JSON数据
-    num = 0
     for entry in tqdm(data, desc='fgsm attack'):
         instruction = ''
         ground_truth = ''
@@ -190,18 +192,11 @@ if __name__ == "__main__":
 
         # fgsm attack
         noise = fgsm_attack(model=model, inputs=inputs, vision_x=vision_x, epsilon=args.eps, dire=args.dire)
-
-        if BLACK_NOISE is None:
-            BLACK_NOISE = noise
-        else:
-            BLACK_NOISE = BLACK_NOISE + noise
-        num += 1
+        BLACK_NOISE = noise
 
     from torchvision.utils import save_image
-    BLACK_NOISE = BLACK_NOISE.detach() / num
     BLACK_NOISE = BLACK_NOISE.squeeze().mean(dim=0)
-    save_image(BLACK_NOISE, f"black/dolphin_fgsm_eps{args.eps}_dire{args.dire}.png")
+    save_image(torch.clamp(BLACK_NOISE, -args.eps, args.eps), f"black/dolphin_fgsm_eps{args.eps}_dire{args.dire}.png")
     BLACK_NOISE = BLACK_NOISE * image_std.to(BLACK_NOISE.device) + image_mean.to(BLACK_NOISE.device)
-    BLACK_NOISE = torch.clamp(BLACK_NOISE, 0, 1)
-    save_image(BLACK_NOISE, f"black/dolphin_fgsm_eps{args.eps}_dire{args.dire}_denorm.png")
+    save_image(torch.clamp(BLACK_NOISE, 0, 1), f"black/dolphin_fgsm_eps{args.eps}_dire{args.dire}_denorm.png")
         

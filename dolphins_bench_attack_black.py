@@ -124,7 +124,7 @@ def get_model_inputs(video_path, instruction, model, image_processor, tokenizer)
 
     return vision_x, inputs
 
-def fgsm_attack(model, vision_x, inputs, epsilon=0.001, dire='pos'):
+def get_noise(model, vision_x, inputs, epsilon=0.001, dire='pos'):
     noise = torch.zeros_like(vision_x).to(device).half().cuda()
     noise.requires_grad = True
     loss = model(
@@ -185,8 +185,8 @@ if __name__ == "__main__":
             vision_x, inputs = get_model_inputs(video_path, instruction, model, image_processor, tokenizer)
             print(vision_x.shape)   # torch.Size([1, 1, 16, 3, 336, 336])
 
-            # fgsm attack
-            noise = fgsm_attack(model=model, inputs=inputs, vision_x=vision_x, epsilon=args.eps, dire=args.dire)
+            # black attack
+            noise = get_noise(model=model, inputs=inputs, vision_x=vision_x, epsilon=args.eps, dire=args.dire)
 
             # inference
             generated_tokens = model.generate(

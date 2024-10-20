@@ -125,7 +125,10 @@ def get_model_inputs(video_path, instruction, model, image_processor, tokenizer)
     return vision_x, inputs
 
 def pgd_attack(model, vision_x, inputs, epsilon=0.001, steps=10, lp='linf', dire='pos'):
-    noise = torch.zeros_like(vision_x).to(device).half().cuda()
+    if BLACK_NOISE is None:
+        noise = torch.zeros_like(vision_x).to(device).half().cuda()
+    else:
+        noise = BLACK_NOISE
     alpha = epsilon / steps
     for _ in range(steps):
         noise.requires_grad = True
@@ -173,11 +176,10 @@ if __name__ == "__main__":
                                 'top_k': 0, 'top_p': 1, 'no_repeat_ngram_size': 3, 'length_penalty': 1,
                                 'do_sample': False,
                                 'early_stopping': True}
-    json_file = f'results/bench_attack_pgd_white_{args.lp}_eps{args.eps}_steps{args.steps}_{args.dire}.json'
+    
     with open('playground/dolphins_bench/dolphins_benchmark.json', 'r') as file:
         data = json.load(file)
 
-    num = 0
     # 遍历JSON数据
     for entry in tqdm(data, desc='pgd attack'):
         instruction = ''
@@ -203,17 +205,10 @@ if __name__ == "__main__":
 
         # pgd attack
         noise = pgd_attack(model=model, inputs=inputs, vision_x=vision_x, epsilon=args.eps, steps=args.steps, lp=args.lp, dire=args.dire)
-
-        if BLACK_NOISE is None:
-            BLACK_NOISE = noise
-        else:
-            BLACK_NOISE = BLACK_NOISE + noise
-        num += 1
+        BLACK_NOISE = noise
 
     from torchvision.utils import save_image
-    BLACK_NOISE = BLACK_NOISE.detach() / num
     BLACK_NOISE = BLACK_NOISE.squeeze().mean(dim=0)
-    save_image(BLACK_NOISE, f"black/dolphin_pgd_{args.lp}_eps{args.eps}_steps{args.steps}_{args.dire}.png")
-    BLACK_NOISE = BLACK_NOISE * image_std + image_mean
-    BLACK_NOISE = torch.clamp(BLACK_NOISE, 0, 1)
-    save_image(BLACK_NOISE, f"black/dolphin_pgd_{args.lp}_eps{args.eps}_steps{args.steps}_{args.dire}_denorm.png")
+    save_image(torch.clamp(BLACK_NOISE, -args.eps, args.eps), f"black/dolphin_pgd_{args.lp}_eps{args.eps}_steps{args.steps}_{args.dire}.png")
+    BLACK_NOISE = BLACK_NOISE * image_std.to(BLACK_NOISE.device) + image_mean.to(BLACK_NOISE.device)
+    save_image(torch.clamp(BLACK_NOISE, 0, 1), f"black/dolphin_pgd_{args.lp}_eps{args.eps}_steps{args.steps}_{args.dire}_denorm.png")

@@ -14,6 +14,7 @@ from pycocoevalcap.tokenizer.ptbtokenizer import PTBTokenizer
 from tqdm import tqdm
 from collections import defaultdict
 from gpt_eval import GPTEvaluation
+import csv
 
 def ptb_tokenize(key_to_captions):
     captions_for_image = {}
@@ -132,7 +133,7 @@ class Evaluation():
     def forward(self, unique_id, answer, GT, label=None):
         scores = {}
         # if label is not None and unique_id in self.chatgpt_scores.keys():
-        scores["chatgpt"] = self.eval_chatGPT(unique_id, answer, GT)
+        scores["chatgpt"] = self.eval_chatGPT(unique_id, answer, GT) / 100
         if label is not None:
             scores["accuracy"] = self.eval_acc(unique_id, answer, label)
         else:
@@ -152,18 +153,18 @@ class Evaluation():
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--result', type=str, default=None)
+    parser.add_argument('--exp', type=str, default=None)
     args = parser.parse_args()
     benchmark_file = "./playground/dolphins_bench/dolphins_benchmark.json"
     # result_file = "results/dolphins_benchmark_attack_online_gpt_target_0.json"
     # result_file = 'playground/dolphins_bench/results/dolphins/dolphins_results.json'
     chatgpt_score_file = "playground/dolphins_bench/results/dolphins/dolphins_scores.json"
-    result_file = args.result
+    result_file =  os.path.join('results', args.exp, 'dolphin_output.json')
     
     task_num = defaultdict(lambda: 0)
     task_scores = defaultdict(list)
 
-    fp = open(result_file.replace('json', 'txt'), "w")
+    fp = open(result_file.replace('dolphin_output.json', 'eval_log.txt'), "w")
     
     with open(benchmark_file, "r") as f:
         dolphins_bench = json.load(f) 
@@ -272,6 +273,10 @@ if __name__ == '__main__':
             if task in task_name:
                 final_scores[task][task_name] = final_score * 100
     
+    csv_data = []
+    csv_headers = ["task_name", "weighted_score"]
+    score_sum = 0
+    task_num = 0
     for task in final_scores.keys():
         scores, weights = [], []
         for sub_task in final_scores[task].keys():
@@ -283,6 +288,22 @@ if __name__ == '__main__':
             f"{task} weighted score: {weighted_average}"
         )
         fp.write(f"{task} weighted score: {weighted_average}\n")
+        csv_data.append({
+            "task": task,
+            "score": weighted_average
+        })
+        score_sum += weighted_average
+        task_num += 1
+
+    csv_path = os.path.join('results', args.exp, 'bench_score.csv')
+    with open(csv_path, 'w', newline='') as csv_file:
+        writer = csv.DictWriter(csv_file, fieldnames=csv_headers)
+        writer.writeheader()
+        writer.writerows(csv_data)
+        writer.writerow({
+            "task_name": 'avg',
+            "weighted_score": score_sum / task_num
+        })
 
     print(final_scores)
     fp.write(str(final_scores)+"\n")

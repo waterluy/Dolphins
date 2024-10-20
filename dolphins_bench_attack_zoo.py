@@ -318,7 +318,9 @@ if __name__ == "__main__":
                                 'early_stopping': True}
     
     ok_unique_id = []
-    json_path = f'results/dolphins_benchmark_attack_zoo_{LR}_{ITER}_{args.opt}.json'
+    folder = f'results/dolphins_benchmark_attack_zoo_{LR}_{ITER}_{args.opt}'
+    os.makedirs(folder, exist_ok=True)
+    json_path = os.path.join(folder, 'dolphin_oustput.json')
     with open(json_path, 'r') as file:
         for line in file:
             ok_unique_id.append(json.loads(line)['unique_id'])

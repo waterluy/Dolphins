@@ -134,9 +134,9 @@ if __name__ == "__main__":
 
     with open('playground/dolphins_bench/dolphins_benchmark.json', 'r') as file:
         data = json.load(file)
-    # random.shuffle(data)
-
-    with open('results/dolphins_benchmark_inference.json', 'w') as file:
+    folder = 'results/dolphins_benchmark_inference'
+    os.makedirs(folder, exist_ok=True)
+    with open(os.path.join(folder, 'dolphin_output.json'), 'w') as file:
         # 遍历JSON数据
         for entry in data:
             instruction = ''

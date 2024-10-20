@@ -168,7 +168,9 @@ if __name__ == "__main__":
                                 'top_k': 0, 'top_p': 1, 'no_repeat_ngram_size': 3, 'length_penalty': 1,
                                 'do_sample': False,
                                 'early_stopping': True}
-    json_file = f'results/bench_attack_pgd_white_{args.lp}_eps{args.eps}_steps{args.steps}_{args.dire}.json'
+    folder = f'results/bench_attack_pgd_white_{args.lp}_eps{args.eps}_steps{args.steps}_{args.dire}'
+    os.makedirs(folder, exist_ok=True)
+    json_file = os.path.join(folder, 'dolphin_oustput.json')
     with open('playground/dolphins_bench/dolphins_benchmark.json', 'r') as file:
         data = json.load(file)
     # random.shuffle(data)

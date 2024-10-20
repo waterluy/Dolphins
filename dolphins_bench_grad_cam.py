@@ -231,11 +231,14 @@ if __name__ == "__main__":
 
     with open('playground/dolphins_bench/dolphins_benchmark.json', 'r') as file:
         data = json.load(file)
-    json_path = f'results/bench_attack_cam_{args.lp}_eps{args.eps}_steps{args.steps}_{args.dire}.json'
+    folder = f'results/bench_attack_cam_{args.lp}_eps{args.eps}_steps{args.steps}_{args.dire}'
+    os.makedirs(folder, exist_ok=True)
+    json_path = os.path.join(folder, 'dolphin_output.json')
     ok_unique_id = []
-    with open(json_path, 'r') as file:
-        for line in file:
-            ok_unique_id.append(json.loads(line)['unique_id'])
+    if os.path.exists(json_path):
+        with open(json_path, 'r') as file:
+            for line in file:
+                ok_unique_id.append(json.loads(line)['unique_id'])
 
     with open(json_path, 'a') as file:
         # 遍历JSON数据
