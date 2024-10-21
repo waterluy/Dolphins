@@ -289,8 +289,8 @@ if __name__ == '__main__':
         )
         fp.write(f"{task} weighted score: {weighted_average}\n")
         csv_data.append({
-            "task": task,
-            "score": weighted_average
+            "task_name": task,
+            "weighted_score": weighted_average
         })
         score_sum += weighted_average
         task_num += 1
