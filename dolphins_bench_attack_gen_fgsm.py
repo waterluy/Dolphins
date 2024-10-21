@@ -212,7 +212,7 @@ if __name__ == "__main__":
     BLACK_NOISE = BLACK_NOISE.squeeze().mean(dim=0)
     # print(BLACK_NOISE.shape)    # torch.Size([3, 336, 336]
     clamp_noise = torch.clamp(BLACK_NOISE, -args.eps, args.eps)
-    save_name = f"black/dolphin_fgsm_eps{args.eps}_dire{args.dire}"
+    save_name = f"black/dolphin_fgsm_eps{args.eps}_{args.dire}"
     save_image(clamp_noise, f"{save_name}.png")
     with open(f"{save_name}.pkl", 'wb') as f:
         pickle.dump(clamp_noise, f)
