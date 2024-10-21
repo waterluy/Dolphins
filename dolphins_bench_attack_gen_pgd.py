@@ -111,19 +111,52 @@ def load_pretrained_modoel():
     return model, image_processor, tokenizer
 
 
-def get_model_inputs(video_path, instruction, model, image_processor, tokenizer):
+def get_model_inputs_prompts_for_loss(instruction, target, model,  tokenizer):
+    prompt = f"USER: <image> is a driving video. {instruction} GPT:<answer>" + target + "<|endofchunk|>"
+    
+    bos_item = torch.LongTensor([tokenizer.bos_token_id])
+    eos_item = torch.LongTensor([tokenizer.eos_token_id])
+    bos_mask = torch.LongTensor([1])
+    eos_mask = torch.LongTensor([1])
+    res = tokenizer(prompt, return_tensors="pt", padding="do_not_pad", truncation=True,
+                       max_length=512, add_special_tokens=False).to(model.device)
+    res["input_ids"] = torch.cat([bos_item, res["input_ids"].squeeze(0), eos_item]).unsqueeze(0)
+    res["attention_mask"] = torch.cat([bos_mask, res["attention_mask"].squeeze(0), eos_mask]).unsqueeze(0)
+    input_ids = res["input_ids"].cuda()
+    attention_mask = res["attention_mask"].cuda()
+    labels = input_ids.clone()
+    labels[labels == tokenizer.pad_token_id] = -100
+    labels[labels == tokenizer.eos_token] = -100
+    labels[:, 0] = -100
+    answer_token_id = tokenizer("<answer>", add_special_tokens=False)["input_ids"][-1]
+    media_token_id = tokenizer("<image>", add_special_tokens=False)["input_ids"][-1]
+    for i in range(labels.shape[0]):
+        # remove loss for any token the before the first <answer>
+        token_idx = 0
+        while token_idx < labels.shape[1] and labels[i][token_idx] != answer_token_id:
+            labels[i][token_idx] = -100
+            token_idx += 1
+    labels = labels.to(input_ids.device)
+    labels[labels == answer_token_id] = -100
+    labels[labels == media_token_id] = -100
+
+    return input_ids, attention_mask, labels
+
+def get_model_inputs_images(video_path, image_processor,):
     frames = get_image(video_path)
     vision_x = torch.stack([image_processor(image) for image in frames], dim=0).unsqueeze(0).unsqueeze(0)
     assert vision_x.shape[2] == len(frames)
+    # print(vision_x.shape)   # torch.Size([1, 1, 16, 3, 336, 336])
+    return vision_x
+
+def get_model_inputs_prompts(instruction, model, tokenizer):
     prompt = [
         f"USER: <image> is a driving video. {instruction} GPT:<answer>"
     ]
     inputs = tokenizer(prompt, return_tensors="pt", ).to(model.device)
-   
-    # print(vision_x.shape)   # torch.Size([1, 1, 16, 3, 336, 336])
     # print(prompt)
+    return inputs
 
-    return vision_x, inputs
 
 def normalize(tensor, mean, std):
     mean = torch.tensor(mean).view(1, 3, 1, 1).half().to(tensor.device)
@@ -135,7 +168,7 @@ def denormalize(tensor, mean, std):
     std = torch.tensor(std).view(1, 3, 1, 1).half().to(tensor.device)
     return tensor * std + mean
 
-def pgd_attack(model, vision_x, inputs, epsilon=0.001, steps=10, lp='linf', dire='pos'):
+def pgd_attack(model, vision_x, input_ids, attention_mask, labels=None, epsilon=0.001, steps=10, lp='linf', dire='pos'):
     if BLACK_NOISE is None:
         noise = torch.zeros_like(vision_x).to(device).half().cuda()
     else:
@@ -144,16 +177,15 @@ def pgd_attack(model, vision_x, inputs, epsilon=0.001, steps=10, lp='linf', dire
     denormed_vision_x = denormalize(vision_x, image_mean, image_std)
     for _ in range(steps):
         noise.requires_grad = True
-        vision_x_noise = denormed_vision_x
-        vision_x_noise = vision_x_noise.half().cuda() + noise
+        vision_x_noise = denormed_vision_x.half().cuda() + noise
         vision_x_noise = normalize(vision_x_noise, image_mean, image_std)
         loss = model(
             vision_x=vision_x_noise,
-            lang_x=inputs["input_ids"].cuda(),
-            attention_mask=inputs["attention_mask"].cuda(),
-            labels=None,
-        )
-        loss = torch.norm(loss.logits, p=2)
+            lang_x=input_ids.cuda(),
+            attention_mask=attention_mask.cuda(),
+            labels=labels.cuda(),
+            media_locations=None
+        )[0]
         loss.backward()
         grad = noise.grad.detach()
         if lp == 'linf':
@@ -215,11 +247,11 @@ if __name__ == "__main__":
         tokenizer.eos_token_id = 50277
         tokenizer.pad_token_id = 50277
 
-        vision_x, inputs = get_model_inputs(video_path, instruction, model, image_processor, tokenizer)
-        # print(vision_x.shape)   # torch.Size([1, 1, 16, 3, 336, 336])
+        images = get_model_inputs_images(video_path=video_path, image_processor=image_processor)
+        input_ids, attention_mask, labels = get_model_inputs_prompts_for_loss(instruction=instruction, target=ground_truth, model=model, tokenizer=tokenizer)
 
         # pgd attack
-        noise = pgd_attack(model=model, inputs=inputs, vision_x=vision_x, epsilon=args.eps, steps=args.steps, lp=args.lp, dire=args.dire)
+        noise = pgd_attack(model=model, vision_x=images, input_ids=input_ids, attention_mask=attention_mask, labels=labels, epsilon=args.eps, steps=args.steps, lp=args.lp, dire=args.dire)
         BLACK_NOISE = noise
 
     from torchvision.utils import save_image

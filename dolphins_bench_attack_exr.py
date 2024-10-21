@@ -156,43 +156,40 @@ def get_model_inputs_prompts(instruction, model, tokenizer):
     # print(prompt)
     return inputs
 
-def normalize(tensor, mean, std):
-    mean = torch.tensor(mean).view(1, 3, 1, 1).half().to(tensor.device)
-    std = torch.tensor(std).view(1, 3, 1, 1).half().to(tensor.device)
-    return (tensor - mean) / std
-
-def denormalize(tensor, mean, std):
-    mean = torch.tensor(mean).view(1, 3, 1, 1).half().to(tensor.device)
-    std = torch.tensor(std).view(1, 3, 1, 1).half().to(tensor.device)
-    return tensor * std + mean
-
-def fgsm_attack(model, vision_x, input_ids, attention_mask, labels=None, epsilon=0.001, dire='pos'):
+def exr_attack(model, vision_x, input_ids, attention_mask, labels=None, epsilon=0.001, steps=10, lp='linf', dire='pos'):
     noise = torch.zeros_like(vision_x).to(device).half().cuda()
-    noise.requires_grad = True
-    vision_x_noise = denormalize(vision_x, image_mean, image_std)
-    vision_x_noise = vision_x_noise.half().cuda() + noise
-    vision_x_noise = normalize(vision_x_noise, image_mean, image_std)
-    loss = model(
-        vision_x=vision_x_noise,
-        lang_x=input_ids.cuda(),
-        attention_mask=attention_mask.cuda(),
-        labels=labels.cuda(),
-        media_locations=None
-    )[0]
-    loss.backward()
-    grad = noise.grad.detach()
-    if dire == 'neg':
-        noise = noise - epsilon * grad.sign()
-    else:
-        noise = noise + epsilon * grad.sign()
+    alpha = epsilon / steps
+    for _ in range(steps):
+        noise.requires_grad = True
+        loss = model(
+            vision_x=vision_x.half().cuda() + noise,
+            lang_x=input_ids.cuda(),
+            attention_mask=attention_mask.cuda(),
+            labels=labels.cuda(),
+            media_locations=None
+        )[0]
+        loss.backward()
+        grad = noise.grad.detach()
+        if lp == 'linf':
+            delta = grad.sign()
+        elif lp == 'l1':
+            delta = grad / torch.norm(grad, p=1)
+        elif lp == 'l2':
+            delta = grad / torch.norm(grad, p=2)
+        else:
+            raise ValueError('lp must be linf, l1 or l2')
+        if dire == 'neg':
+            noise = noise - alpha * delta
+        else:
+            noise = noise + alpha * delta
+        noise = noise.detach()
     return noise.detach()
-
-image_mean = [0.48145466, 0.4578275, 0.40821073]
-image_std = [0.26862954, 0.26130258, 0.27577711]
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--eps', type=float, default=0.01)
+    parser.add_argument('--eps', type=float, default=0.001)
+    parser.add_argument('--steps', type=int, default=10)
+    parser.add_argument('--lp', type=str, default='linf', choices=['l1', 'l2', 'linf'])
     parser.add_argument('--dire', type=str, default='pos', choices=['pos', 'neg'])
     args = parser.parse_args()
     model, image_processor, tokenizer = load_pretrained_modoel()
@@ -203,14 +200,14 @@ if __name__ == "__main__":
                                 'top_k': 0, 'top_p': 1, 'no_repeat_ngram_size': 3, 'length_penalty': 1,
                                 'do_sample': False,
                                 'early_stopping': True}
-    folder = f'results/bench_attack_fgsm_white_eps{args.eps}_dire{args.dire}'
+    folder = f'results/bench_attack_exr_white_{args.lp}_eps{args.eps}_steps{args.steps}_{args.dire}'
     os.makedirs(folder, exist_ok=True)
-    json_path = os.path.join(folder, 'dolphin_oustput.json')
+    json_file = os.path.join(folder, 'dolphin_oustput.json')
     with open('playground/dolphins_bench/dolphins_benchmark.json', 'r') as file:
         data = json.load(file)
     # random.shuffle(data)
 
-    with open(json_path, 'w') as file:
+    with open(json_file, 'w') as file:
         # 遍历JSON数据
         for entry in data:
             instruction = ''
@@ -234,8 +231,8 @@ if __name__ == "__main__":
             images = get_model_inputs_images(video_path=video_path, image_processor=image_processor)
             input_ids, attention_mask, labels = get_model_inputs_prompts_for_loss(instruction=instruction, target=ground_truth, model=model, tokenizer=tokenizer)
 
-            # fgsm attack
-            noise = fgsm_attack(model=model, vision_x=images, input_ids=input_ids, attention_mask=attention_mask, labels=labels, epsilon=args.eps, dire=args.dire)
+            # exr attack
+            noise = exr_attack(model=model, vision_x=images, input_ids=input_ids, attention_mask=attention_mask, labels=labels, epsilon=args.eps, steps=args.steps, lp=args.lp, dire=args.dire)
 
             # inference
             inputs = get_model_inputs_prompts(instruction=instruction, model=model, tokenizer=tokenizer)
