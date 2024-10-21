@@ -32,6 +32,7 @@ from peft import (
     PeftConfig,
     PeftModel
 )
+import pickle
 
 def setup_seed(seed):
     torch.manual_seed(seed)
@@ -124,14 +125,27 @@ def get_model_inputs(video_path, instruction, model, image_processor, tokenizer)
 
     return vision_x, inputs
 
+def normalize(tensor, mean, std):
+    mean = torch.tensor(mean).view(1, 3, 1, 1).half().to(tensor.device)
+    std = torch.tensor(std).view(1, 3, 1, 1).half().to(tensor.device)
+    return (tensor - mean) / std
+
+def denormalize(tensor, mean, std):
+    mean = torch.tensor(mean).view(1, 3, 1, 1).half().to(tensor.device)
+    std = torch.tensor(std).view(1, 3, 1, 1).half().to(tensor.device)
+    return tensor * std + mean
+
 def fgsm_attack(model, vision_x, inputs, epsilon=0.001, dire='pos'):
     if BLACK_NOISE is None:
         noise = torch.zeros_like(vision_x).to(device).half().cuda()
     else:
         noise = BLACK_NOISE
     noise.requires_grad = True
+    vision_x_noise = denormalize(vision_x, image_mean, image_std)
+    vision_x_noise = vision_x_noise.half().cuda() + noise
+    vision_x_noise = normalize(vision_x_noise, image_mean, image_std)
     loss = model(
-        vision_x=(vision_x).half().cuda() + noise,
+        vision_x=vision_x_noise,
         lang_x=inputs["input_ids"].cuda(),
         attention_mask=inputs["attention_mask"].cuda(),
         labels=None,
@@ -146,8 +160,8 @@ def fgsm_attack(model, vision_x, inputs, epsilon=0.001, dire='pos'):
         noise = noise + epsilon * grad.sign()
     return noise.detach()
 
-image_mean = torch.tensor([0.48145466, 0.4578275, 0.40821073] ).view(3, 1, 1)
-image_std = torch.tensor([0.26862954, 0.26130258, 0.27577711]).view(3, 1, 1)
+image_mean = [0.48145466, 0.4578275, 0.40821073]
+image_std = [0.26862954, 0.26130258, 0.27577711]
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -196,7 +210,9 @@ if __name__ == "__main__":
 
     from torchvision.utils import save_image
     BLACK_NOISE = BLACK_NOISE.squeeze().mean(dim=0)
-    save_image(torch.clamp(BLACK_NOISE, -args.eps, args.eps), f"black/dolphin_fgsm_eps{args.eps}_dire{args.dire}.png")
-    BLACK_NOISE = BLACK_NOISE * image_std.to(BLACK_NOISE.device) + image_mean.to(BLACK_NOISE.device)
-    save_image(torch.clamp(BLACK_NOISE, 0, 1), f"black/dolphin_fgsm_eps{args.eps}_dire{args.dire}_denorm.png")
-        
+    # print(BLACK_NOISE.shape)    # torch.Size([3, 336, 336]
+    clamp_noise = torch.clamp(BLACK_NOISE, -args.eps, args.eps)
+    save_name = f"black/dolphin_fgsm_eps{args.eps}_dire{args.dire}"
+    save_image(clamp_noise, f"{save_name}.png")
+    with open(f"{save_name}.pkl", 'wb') as f:
+        pickle.dump(clamp_noise, f)
