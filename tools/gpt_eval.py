@@ -11,8 +11,10 @@ import csv
 
 class GPTEvaluation:
     def __init__(self):
-        self.api_key = 'sk-I3lh2VFtgZQ45ZQv7fF0Ef29B16642F99451A5A8DfCb46D3'
-        self.url = 'https://api.bianxie.ai/v1/chat/completions'
+        with open("tools/api.json", 'r') as file:
+            data = json.load(file)["eval"]
+        self.api_key = data['api_key']
+        self.url = data['base_url']
         self.headers = {
             'Content-Type': 'application/json',
             'Authorization': f'Bearer {self.api_key}'
