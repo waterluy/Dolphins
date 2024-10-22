@@ -179,6 +179,7 @@ def fgsm_attack(model, vision_x, input_ids, attention_mask, labels=None, epsilon
         labels=labels.cuda(),
         media_locations=None
     )[0]
+    noise.grad = None
     loss.backward()
     grad = noise.grad.detach()
     if dire == 'neg':
@@ -205,7 +206,7 @@ if __name__ == "__main__":
                                 'early_stopping': True}
     folder = f'results/bench_attack_fgsm_white_eps{args.eps}_dire{args.dire}'
     os.makedirs(folder, exist_ok=True)
-    json_path = os.path.join(folder, 'dolphin_oustput.json')
+    json_path = os.path.join(folder, 'dolphin_output.json')
     with open('playground/dolphins_bench/dolphins_benchmark.json', 'r') as file:
         data = json.load(file)
     # random.shuffle(data)

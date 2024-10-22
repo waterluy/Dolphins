@@ -34,6 +34,7 @@ from peft import (
 import clip
 import torch.nn.functional as F
 from torchvision import transforms
+from tools.gpt_coi import GPT
 
 def setup_seed(seed):
     torch.manual_seed(seed)
@@ -153,8 +154,18 @@ def openai_chatgpt_function(question, mp4_url):
     answer = response.json()['choices'][0]['message']['content']
     return answer
 
+def get_model_inputs(video_path, instruction, model, image_processor, tokenizer):
+    frames = get_image(video_path)
+    vision_x = torch.stack([image_processor(image) for image in frames], dim=0).unsqueeze(0).unsqueeze(0)
+    assert vision_x.shape[2] == len(frames)
+    prompt = [
+        f"USER: <image> is a driving video. {instruction} GPT:<answer>"
+    ]
+    inputs = tokenizer(prompt, return_tensors="pt", ).to(model.device)
 
-def get_model_inputs(video_path, instruction, model, image_processor, tokenizer, target="Stop!!!", conversation_history=None):
+    return vision_x, inputs
+
+def get_model_inputs_coi(video_path, instruction, model, image_processor, tokenizer, target="Stop!!!", conversation_history=None):
     frames = get_image(video_path)
     vision_x = torch.stack([image_processor(image) for image in frames], dim=0).unsqueeze(0).unsqueeze(0)
     assert vision_x.shape[2] == len(frames)
@@ -164,7 +175,7 @@ def get_model_inputs(video_path, instruction, model, image_processor, tokenizer,
     device = model.device
     # attack
     noise = torch.zeros_like(vision_x[0, 0, :], requires_grad=True, device=device)
-    optimizer = torch.optim.Adam([noise], lr=LR)
+    # optimizer = torch.optim.Adam([noise], lr=LR)
     targets = [target for t in range(vision_x.shape[2])]
     # 提取 results_for_attack 特征
     text_features = model_clip.encode_text(clip.tokenize(targets, truncate=True).to(device)).to(device)
@@ -222,6 +233,29 @@ def read_instruction(instruction_path):
                     instructions.append(convo['prompt'])
     return instructions
 
+def get_ad_3p(task):
+    if task == "detailed_description":
+        return "perception"
+    elif task == "open_voc_object":
+        return "perception"
+    elif task == "scene":
+        return "perception"
+    elif task == "timeofday":
+        return "perception"
+    elif task == "traffic_light":
+        return "perception"
+    elif task == "weather":
+        return "perception"
+    else:
+        raise ValueError("Invalid task name: {}".format(task))
+
+def coi_attack(task, video_path, instruction, last_answers=None):
+    mp4_url = f"https://github.com/waterluy/Dolphins/blob/wlu-main/{video_path}"
+    ad_3p_stage = get_ad_3p(task)
+    induction_text = gpt.forward(ad_3p_stage=ad_3p_stage, last_answers=last_answers)
+    
+    return 
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='GPT Evaluation')
@@ -232,12 +266,13 @@ if __name__ == "__main__":
     ITER = args.iter
 
     ok_unique_id = []
-    folder = f'results/dolphins_benchmark_attack_online_gpt_target_{LR}_{ITER}'
+    folder = f'results/bench_attack_coi_{LR}_{ITER}'
     os.makedirs(folder, exist_ok=True)
     json_path = os.path.join(folder, 'dolphin_oustput.json')
     with open(json_path, 'r') as file:
         for line in file:
             ok_unique_id.append(json.loads(line)['unique_id'])
+    gpt = GPT()
 
     model, image_processor, tokenizer = load_pretrained_modoel()
     device = model.device
@@ -249,38 +284,28 @@ if __name__ == "__main__":
 
     with open('playground/dolphins_bench/dolphins_benchmark.json', 'r') as file:
         data = json.load(file)
-    # random.shuffle(data)
     # !!!!!! 追加模式记得注释掉！！！！！不要重复写入
     target_fieldnames = ['task_name', 'video_path', 'instruction', 'ground_truth', 'target']
-    # with open("csvfiles/target.csv", mode="a", newline="") as file:
-    #     writer = csv.DictWriter(file, fieldnames=target_fieldnames)
-    #     writer.writeheader()
 
     with open(json_path, 'a') as file:
         # 遍历JSON数据
         for entry in data:
-            instruction = ''
-            ground_truth = ''
             unique_id = entry["id"]
             label = entry['label']
+            task_name = entry['task_name']
             video_path = entry['video_path'][entry['video_path'].find('/')+1:]
             # 从conversations中提取human的value和gpt的value
-            for conversation in entry['conversations']:
-                if conversation['from'] == 'human':
-                    instruction = conversation['value']
-                elif conversation['from'] == 'gpt':
-                    ground_truth = conversation['value']
-            if instruction == '':
-                continue
+            instruction = entry['conversations'][0]['value']
+            ground_truth = entry['conversations'][1]['value']
 
             if unique_id in ok_unique_id:
                 continue
-            if unique_id not in ok_unique_id:
-                print(unique_id, video_path, instruction)
-            task_name = entry['task_name']
+            tokenizer.eos_token_id = 50277
+            tokenizer.pad_token_id = 50277
             
-            mp4 = f"https://github.com/waterluy/Dolphins/blob/wlu-main/{video_path}"
-            print(mp4)
+            vision_x, inputs = get_model_inputs(video_path=video_path, instruction=instruction, model=model, image_processor=image_processor, tokenizer=tokenizer)
+            
+            noise = coi_attack(task=task_name, video_path=video_path, instruction=instruction)
             success = False
             while not success:
                 try:
@@ -296,15 +321,10 @@ if __name__ == "__main__":
             with open("csvfiles/target.csv", mode="a", newline="") as tmp:
                 target_writer = csv.DictWriter(tmp, fieldnames=target_fieldnames)
                 target_writer.writerow({'task_name': task_name, 'video_path': video_path, 'instruction': instruction, 'ground_truth': ground_truth, 'target': target})
-            tokenizer.eos_token_id = 50277
-            tokenizer.pad_token_id = 50277
-            # 保留 conversation_history
-            # vision_x, inputs = get_model_inputs(video_path, instruction, model, image_processor, tokenizer, conversation_history)
-            # 不保留 conversation_history
-            vision_x, inputs = get_model_inputs(video_path, instruction, model, image_processor, tokenizer, target=target)
 
+            # inference  !!!!!记得加noise
             generated_tokens = model.generate(
-                vision_x=vision_x.half().cuda(),
+                vision_x=vision_x.half().cuda()+noise,
                 lang_x=inputs["input_ids"].cuda(),
                 attention_mask=inputs["attention_mask"].cuda(),
                 num_beams=3,

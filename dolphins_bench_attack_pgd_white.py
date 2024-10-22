@@ -182,6 +182,7 @@ def pgd_attack(model, vision_x, input_ids, attention_mask, labels=None, epsilon=
             labels=labels.cuda(),
             media_locations=None
         )[0]
+        noise.grad = None
         loss.backward()
         grad = noise.grad.detach()
         if lp == 'linf':
@@ -219,7 +220,7 @@ if __name__ == "__main__":
                                 'early_stopping': True}
     folder = f'results/bench_attack_pgd_white_{args.lp}_eps{args.eps}_steps{args.steps}_{args.dire}'
     os.makedirs(folder, exist_ok=True)
-    json_file = os.path.join(folder, 'dolphin_oustput.json')
+    json_file = os.path.join(folder, 'dolphin_output.json')
     with open('playground/dolphins_bench/dolphins_benchmark.json', 'r') as file:
         data = json.load(file)
     # random.shuffle(data)

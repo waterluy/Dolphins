@@ -69,7 +69,10 @@ class GPT:
 def gen_multi_version(samples=5, bench_path='playground/dolphins_bench/dolphins_benchmark.json'):
     output_path = bench_path.replace('.json', '_multi.json')
     if os.path.exists(output_path):
-        return output_path
+        with open(output_path, 'r') as file:
+            data = json.load(file)
+            version_num = len(data[0]["conversations"][0]["value"]["multi_version"])
+        return output_path, version_num
     
     with open(bench_path, 'r') as file:
         data = json.load(file)
@@ -93,7 +96,8 @@ def gen_multi_version(samples=5, bench_path='playground/dolphins_bench/dolphins_
 
     with open(output_path, 'w') as file:
         json.dump(data, file, indent=4)
-    return output_path
+    assert len(prompts) == (samples + 1)
+    return output_path, len(prompts)
 
 
 if __name__ == "__main__":

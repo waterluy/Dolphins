@@ -181,10 +181,11 @@ def exr_attack(model, vision_x, input_ids_list, attention_mask_list, labels_list
     noise = torch.zeros_like(vision_x).to(device).half().cuda()
     alpha = 2 * epsilon / steps
     denormed_vision_x = denormalize(vision_x, image_mean, image_std)
-    for idx in range(steps):
+    for _ in range(steps):
         noise.requires_grad = True
         vision_x_noise = denormed_vision_x.half().cuda() + noise
         vision_x_noise = normalize(vision_x_noise, image_mean, image_std)
+        idx = random.randrange(0, version_num)   # random.randrange(start, stop)生成一个范围内的整数，但不包括stop
         loss = model(
             vision_x=vision_x_noise,
             lang_x=input_ids_list[idx].cuda(),
@@ -192,6 +193,7 @@ def exr_attack(model, vision_x, input_ids_list, attention_mask_list, labels_list
             labels=labels_list[idx].cuda(),
             media_locations=None
         )[0]
+        noise.grad = None
         loss.backward()
         grad = noise.grad.detach()
         if lp == 'linf':
@@ -229,8 +231,8 @@ if __name__ == "__main__":
                                 'early_stopping': True}
     folder = f'results/bench_attack_exr_white_{args.lp}_eps{args.eps}_steps{args.steps}_{args.dire}'
     os.makedirs(folder, exist_ok=True)
-    json_file = os.path.join(folder, 'dolphin_oustput.json')
-    bench_path = gen_multi_version(samples=args.steps)
+    json_file = os.path.join(folder, 'dolphin_output.json')
+    bench_path, version_num = gen_multi_version(samples=args.steps)
     with open(bench_path, 'r') as file:
         data = json.load(file)
 

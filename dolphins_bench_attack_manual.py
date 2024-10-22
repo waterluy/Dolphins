@@ -232,7 +232,7 @@ if __name__ == "__main__":
 
     folder = f'results/dolphins_benchmark_attack_manual_{LR}_{ITER}'
     os.makedirs(folder, exist_ok=True)
-    json_path = os.path.join(folder, 'dolphin_oustput.json')
+    json_path = os.path.join(folder, 'dolphin_output.json')
 
     with open(json_path, 'w') as file:
         # 遍历JSON数据

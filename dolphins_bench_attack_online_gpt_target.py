@@ -242,7 +242,7 @@ if __name__ == "__main__":
     ok_unique_id = []
     folder = f'results/dolphins_benchmark_attack_online_gpt_target_{LR}_{ITER}'
     os.makedirs(folder, exist_ok=True)
-    json_path = os.path.join(folder, 'dolphin_oustput.json')
+    json_path = os.path.join(folder, 'dolphin_output.json')
     with open(json_path, 'r') as file:
         for line in file:
             ok_unique_id.append(json.loads(line)['unique_id'])

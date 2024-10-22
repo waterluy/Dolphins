@@ -176,6 +176,7 @@ def fgsm_attack(model, vision_x, input_ids, attention_mask, labels=None, epsilon
         labels=labels.cuda(),
         media_locations=None
     )[0]
+    noise.grad = None
     loss.backward()
     grad = noise.grad.detach()
     if dire == 'neg':
