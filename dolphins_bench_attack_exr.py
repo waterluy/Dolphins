@@ -179,7 +179,7 @@ def denormalize(tensor, mean, std):
 
 def exr_attack(model, vision_x, input_ids_list, attention_mask_list, labels_list=None, epsilon=0.001, steps=10, lp='linf', dire='pos'):
     noise = torch.zeros_like(vision_x).to(device).half().cuda()
-    alpha = epsilon / steps
+    alpha = 2 * epsilon / steps
     denormed_vision_x = denormalize(vision_x, image_mean, image_std)
     for idx in range(steps):
         noise.requires_grad = True
