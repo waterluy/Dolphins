@@ -35,7 +35,7 @@ PREFIX = "Based on the driver's two outputs, the previous output was '{PREVIOUS}
 class GPT:
     def __init__(self):
         with open("tools/api.json", 'r') as file:
-            data = json.load(file)["eval"]
+            data = json.load(file)["gen_muti"]
         self.client = OpenAI(base_url=data["base_url"],api_key=data["api_key"])
         self.stage2template = {
             "perception": P1,
@@ -44,7 +44,7 @@ class GPT:
         }
 
     # 调用 gpt，生成回复
-    def call_chatgpt(self, chatgpt_messages, max_tokens=77, model="gpt-4o-all"):
+    def call_chatgpt(self, chatgpt_messages, max_tokens=77, model="gpt-4o"):
         response = self.client.chat.completions.create(
             model=model, messages=chatgpt_messages, temperature=0.6, max_tokens=max_tokens
         )
@@ -54,21 +54,44 @@ class GPT:
         return reply, total_tokens # 返回回复内容 和 总token数
     
     # 准备发给gpt的消息格式
-    def prepare_chatgpt_message(self, prompt):
+    def prepare_chatgpt_message(self, prompt, gif_url):
         system_message = "You are an experienced driver for diving data analysis."
-        messages = [{"role": "system", "content": system_message}]
-        messages.append({"role": "user", "content": "{}".format(prompt)})
+        messages = [{
+            "role": "system", 
+            "content": system_message
+        }]
+        messages.append({
+            "role": "user", 
+            "content": [
+                {
+                    "type": "text",
+                    "text": "{}".format(prompt)
+                },
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": gif_url
+                    }
+                }
+            ]
+        })
+        # messages.append({
+        #     "role": "user", 
+        #     "content": "The video url is {}.\n{}".format(mp4_url, prompt)
+        # })
         
         return messages
     
-    def generate(self, ad_3p_stage='planning', last_answers={'PREVIOUS': None, 'CURRENT': None}): 
-        prompts = PREFIX.format_map(last_answers)
-        prompts += "\n"
+    def generate(self, ad_3p_stage='planning', last_answers={'PREVIOUS': None, 'CURRENT': None}, gif_url=''): 
+        prompts = ""
+        if last_answers['PREVIOUS'] is not None and last_answers['CURRENT'] is not None:
+            prompts += PREFIX.format_map(last_answers)
+            prompts += "\n"
         prompts += self.stage2template[ad_3p_stage]
         prompts += "\n"
 
         output = ""
-        messages = self.prepare_chatgpt_message(prompts)
+        messages = self.prepare_chatgpt_message(prompts, gif_url)
         reply, total_tokens = self.call_chatgpt(messages, max_tokens=77)
 
         output += reply
@@ -79,12 +102,12 @@ class GPT:
         # print(output)
         return output
 
-    def forward(self, ad_3p_stage='planning', last_answers={'PREVIOUS': None, 'CURRNET': None}):
+    def forward(self, ad_3p_stage='planning', last_answers={'PREVIOUS': None, 'CURRNET': None}, gif_url=''):
         success = False
         while not success:
             induction_text = None
             try:
-                induction_text = self.generate(ad_3p_stage=ad_3p_stage, last_answers=last_answers)
+                induction_text = self.generate(ad_3p_stage=ad_3p_stage, last_answers=last_answers, gif_url=gif_url)
             except Exception as e:
                 print(e, induction_text)
                 success = False

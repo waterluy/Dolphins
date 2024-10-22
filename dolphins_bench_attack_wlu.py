@@ -249,11 +249,12 @@ def get_ad_3p(task):
     else:
         raise ValueError("Invalid task name: {}".format(task))
 
-def coi_attack(task, video_path, instruction, last_answers=None):
-    mp4_url = f"https://github.com/waterluy/Dolphins/blob/wlu-main/{video_path}"
+def coi_attack(task, video_path, instruction, last_answers={'PREVIOUS': None, 'CURRENT': None}):
+    gif_url = "https://github.com/waterluy/Dolphins/blob/wlu-main/{}".format(video_path.replace('.mp4', '.gif'))
     ad_3p_stage = get_ad_3p(task)
-    induction_text = gpt.forward(ad_3p_stage=ad_3p_stage, last_answers=last_answers)
-    
+    induction_text = gpt.forward(ad_3p_stage=ad_3p_stage, last_answers=last_answers, gif_url=gif_url)
+    print(induction_text)
+    # quit()
     return 
 
 
@@ -269,9 +270,10 @@ if __name__ == "__main__":
     folder = f'results/bench_attack_coi_{LR}_{ITER}'
     os.makedirs(folder, exist_ok=True)
     json_path = os.path.join(folder, 'dolphin_oustput.json')
-    with open(json_path, 'r') as file:
-        for line in file:
-            ok_unique_id.append(json.loads(line)['unique_id'])
+    if os.path.exists(json_path):
+        with open(json_path, 'r') as file:
+            for line in file:
+                ok_unique_id.append(json.loads(line)['unique_id'])
     gpt = GPT()
 
     model, image_processor, tokenizer = load_pretrained_modoel()
@@ -304,50 +306,50 @@ if __name__ == "__main__":
             tokenizer.pad_token_id = 50277
             
             vision_x, inputs = get_model_inputs(video_path=video_path, instruction=instruction, model=model, image_processor=image_processor, tokenizer=tokenizer)
-            
-            noise = coi_attack(task=task_name, video_path=video_path, instruction=instruction)
-            success = False
-            while not success:
-                try:
-                    target = openai_chatgpt_function(question=instruction, mp4_url=mp4)
-                    if ("MP4" in target) or ("mp4" in target):
-                        raise Exception("MP4 in target")
-                except Exception as e:
-                    print(e)
-                    success = False
-                else:
-                    success = True
-            print("target:", target)
-            with open("csvfiles/target.csv", mode="a", newline="") as tmp:
-                target_writer = csv.DictWriter(tmp, fieldnames=target_fieldnames)
-                target_writer.writerow({'task_name': task_name, 'video_path': video_path, 'instruction': instruction, 'ground_truth': ground_truth, 'target': target})
+            print(video_path)
+            coi_attack(task=task_name, video_path=video_path, instruction=instruction)
+            # success = False
+            # while not success:
+            #     try:
+            #         target = openai_chatgpt_function(question=instruction, mp4_url=mp4)
+            #         if ("MP4" in target) or ("mp4" in target):
+            #             raise Exception("MP4 in target")
+            #     except Exception as e:
+            #         print(e)
+            #         success = False
+            #     else:
+            #         success = True
+            # print("target:", target)
+            # with open("csvfiles/target.csv", mode="a", newline="") as tmp:
+            #     target_writer = csv.DictWriter(tmp, fieldnames=target_fieldnames)
+            #     target_writer.writerow({'task_name': task_name, 'video_path': video_path, 'instruction': instruction, 'ground_truth': ground_truth, 'target': target})
 
-            # inference  !!!!!记得加noise
-            generated_tokens = model.generate(
-                vision_x=vision_x.half().cuda()+noise,
-                lang_x=inputs["input_ids"].cuda(),
-                attention_mask=inputs["attention_mask"].cuda(),
-                num_beams=3,
-                **generation_kwargs,
-            )
+            # # inference  !!!!!记得加noise
+            # generated_tokens = model.generate(
+            #     vision_x=vision_x.half().cuda()+noise,
+            #     lang_x=inputs["input_ids"].cuda(),
+            #     attention_mask=inputs["attention_mask"].cuda(),
+            #     num_beams=3,
+            #     **generation_kwargs,
+            # )
 
-            generated_tokens = generated_tokens.cpu().numpy()
-            if isinstance(generated_tokens, tuple):
-                generated_tokens = generated_tokens[0]
+            # generated_tokens = generated_tokens.cpu().numpy()
+            # if isinstance(generated_tokens, tuple):
+            #     generated_tokens = generated_tokens[0]
 
-            generated_text = tokenizer.batch_decode(generated_tokens)
-            last_answer_index = generated_text[0].rfind("<answer>")
-            content_after_last_answer = generated_text[0][last_answer_index + len("<answer>"):]
+            # generated_text = tokenizer.batch_decode(generated_tokens)
+            # last_answer_index = generated_text[0].rfind("<answer>")
+            # content_after_last_answer = generated_text[0][last_answer_index + len("<answer>"):]
 
-            print(f"\n{video_path}\n")
-            print(f"\n\ninstruction: {instruction}\ndolphins answer: {content_after_last_answer}\n\n")
-            # 写入json行数据
-            file.write(
-                json.dumps({
-                    "unique_id": unique_id,
-                    "task_name": task_name,
-                    "pred": content_after_last_answer,
-                    "gt": ground_truth,
-                    "label": label
-                }) + "\n"
-            )
+            # print(f"\n{video_path}\n")
+            # print(f"\n\ninstruction: {instruction}\ndolphins answer: {content_after_last_answer}\n\n")
+            # # 写入json行数据
+            # file.write(
+            #     json.dumps({
+            #         "unique_id": unique_id,
+            #         "task_name": task_name,
+            #         "pred": content_after_last_answer,
+            #         "gt": ground_truth,
+            #         "label": label
+            #     }) + "\n"
+            # )

@@ -142,12 +142,12 @@ def openai_chatgpt_function(question, mp4_url):
                 }
             }
         ],
-        "max_tokens": 77
         # "content": instruction
     })
     data = {
         'model': 'gpt-4o-all',
         'messages': messages,
+        "max_tokens": 77
     }
     response = requests.post(url, headers=headers, json=data)
     answer = response.json()['choices'][0]['message']['content']
