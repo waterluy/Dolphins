@@ -67,7 +67,7 @@ class GPT:
 
 
 def gen_multi_version(samples=5, bench_path='playground/dolphins_bench/dolphins_benchmark.json'):
-    output_path = bench_path.replace('.json', '_multi.json')
+    output_path = bench_path.replace('.json', '_multi_woori.json')
     if os.path.exists(output_path):
         with open(output_path, 'r') as file:
             data = json.load(file)
@@ -83,15 +83,18 @@ def gen_multi_version(samples=5, bench_path='playground/dolphins_bench/dolphins_
         prompts = []
         instruction = entry['conversations'][0]['value']
         prompts.append(instruction)
-        
+        new_prompts = []
+        print(samples)
         for _ in range(samples):
             new_version = gpt.forward(str(prompts))
             prompts.append(new_version)
+            new_prompts.append(new_version)
         
         random.shuffle(prompts)
+        random.shuffle(new_prompts)
         entry['conversations'][0]['value'] = {
             'ori': instruction,
-            'multi_version': prompts
+            'multi_version': new_prompts
         }
 
     with open(output_path, 'w') as file:

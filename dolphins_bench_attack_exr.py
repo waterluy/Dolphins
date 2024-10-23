@@ -211,6 +211,40 @@ def exr_attack(model, vision_x, input_ids_list, attention_mask_list, labels_list
         noise = noise.detach()
     return noise.detach()
 
+def exr_attack_one(model, vision_x, input_ids_list, attention_mask_list, labels_list=None, epsilon=0.001, steps=10, lp='linf', dire='pos'):
+    noise = torch.zeros_like(vision_x).to(device).half().cuda()
+    alpha = 2 * epsilon / steps
+    denormed_vision_x = denormalize(vision_x, image_mean, image_std)
+    idx = random.randrange(0, version_num)   # random.randrange(start, stop)生成一个范围内的整数，但不包括stop
+    for _ in range(steps):
+        noise.requires_grad = True
+        vision_x_noise = denormed_vision_x.half().cuda() + noise
+        vision_x_noise = normalize(vision_x_noise, image_mean, image_std)
+        loss = model(
+            vision_x=vision_x_noise,
+            lang_x=input_ids_list[idx].cuda(),
+            attention_mask=attention_mask_list[idx].cuda(),
+            labels=labels_list[idx].cuda(),
+            media_locations=None
+        )[0]
+        noise.grad = None
+        loss.backward()
+        grad = noise.grad.detach()
+        if lp == 'linf':
+            delta = grad.sign()
+        elif lp == 'l1':
+            delta = grad / torch.norm(grad, p=1)
+        elif lp == 'l2':
+            delta = grad / torch.norm(grad, p=2)
+        else:
+            raise ValueError('lp must be linf, l1 or l2')
+        if dire == 'neg':
+            noise = noise - alpha * delta
+        else:
+            noise = noise + alpha * delta
+        noise = noise.detach()
+    return noise.detach()
+
 image_mean = [0.48145466, 0.4578275, 0.40821073]
 image_std = [0.26862954, 0.26130258, 0.27577711]
 
@@ -220,6 +254,8 @@ if __name__ == "__main__":
     parser.add_argument('--steps', type=int, default=10)
     parser.add_argument('--lp', type=str, default='linf', choices=['l1', 'l2', 'linf'])
     parser.add_argument('--dire', type=str, default='pos', choices=['pos', 'neg'])
+    parser.add_argument('--one', action='store_true')
+    parser.add_argument('--samples', type=int, default=10)
     args = parser.parse_args()
     model, image_processor, tokenizer = load_pretrained_modoel()
     device = model.device
@@ -229,10 +265,13 @@ if __name__ == "__main__":
                                 'top_k': 0, 'top_p': 1, 'no_repeat_ngram_size': 3, 'length_penalty': 1,
                                 'do_sample': False,
                                 'early_stopping': True}
-    folder = f'results/bench_attack_exr_white_{args.lp}_eps{args.eps}_steps{args.steps}_{args.dire}'
+    if args.one:
+        folder = f'results/bench_attack_exrwoori1_white_{args.lp}_eps{args.eps}_steps{args.steps}_{args.dire}'
+    else:
+        folder = f'results/bench_attack_exrwoori_white_{args.lp}_eps{args.eps}_steps{args.steps}_{args.dire}'
     os.makedirs(folder, exist_ok=True)
     json_file = os.path.join(folder, 'dolphin_output.json')
-    bench_path, version_num = gen_multi_version(samples=args.steps)
+    bench_path, version_num = gen_multi_version(samples=args.samples)
     with open(bench_path, 'r') as file:
         data = json.load(file)
 
@@ -263,7 +302,10 @@ if __name__ == "__main__":
             input_ids_list, attention_mask_list, labels_list = get_model_inputs_prompts_for_loss(instructions=multi_version_instructions, target=ground_truth, model=model, tokenizer=tokenizer)
 
             # exr attack
-            noise = exr_attack(model=model, vision_x=images, input_ids_list=input_ids_list, attention_mask_list=attention_mask_list, labels_list=labels_list, epsilon=args.eps, steps=args.steps, lp=args.lp, dire=args.dire)
+            if args.one:
+                noise = exr_attack_one(model=model, vision_x=images, input_ids_list=input_ids_list, attention_mask_list=attention_mask_list, labels_list=labels_list, epsilon=args.eps, steps=args.steps, lp=args.lp, dire=args.dire)
+            else:
+                noise = exr_attack(model=model, vision_x=images, input_ids_list=input_ids_list, attention_mask_list=attention_mask_list, labels_list=labels_list, epsilon=args.eps, steps=args.steps, lp=args.lp, dire=args.dire)
 
             # inference
             inputs = get_model_inputs_prompts(instruction=instruction, model=model, tokenizer=tokenizer)

@@ -54,7 +54,7 @@ class GPT:
         return reply, total_tokens # 返回回复内容 和 总token数
     
     # 准备发给gpt的消息格式
-    def prepare_chatgpt_message(self, prompt, gif_url):
+    def prepare_chatgpt_message(self, prompt, mp4_url):
         system_message = "You are an experienced driver for diving data analysis."
         messages = [{
             "role": "system", 
@@ -62,27 +62,12 @@ class GPT:
         }]
         messages.append({
             "role": "user", 
-            "content": [
-                {
-                    "type": "text",
-                    "text": "{}".format(prompt)
-                },
-                {
-                    "type": "image_url",
-                    "image_url": {
-                        "url": gif_url
-                    }
-                }
-            ]
+            "content": "The video url is {}.\n{}".format(mp4_url, prompt)
         })
-        # messages.append({
-        #     "role": "user", 
-        #     "content": "The video url is {}.\n{}".format(mp4_url, prompt)
-        # })
         
         return messages
     
-    def generate(self, ad_3p_stage='planning', last_answers={'PREVIOUS': None, 'CURRENT': None}, gif_url=''): 
+    def generate(self, ad_3p_stage='planning', last_answers={'PREVIOUS': None, 'CURRENT': None}, mp4_url=''): 
         prompts = ""
         if last_answers['PREVIOUS'] is not None and last_answers['CURRENT'] is not None:
             prompts += PREFIX.format_map(last_answers)
@@ -91,7 +76,7 @@ class GPT:
         prompts += "\n"
 
         output = ""
-        messages = self.prepare_chatgpt_message(prompts, gif_url)
+        messages = self.prepare_chatgpt_message(prompts, mp4_url)
         reply, total_tokens = self.call_chatgpt(messages, max_tokens=77)
 
         output += reply
@@ -102,12 +87,12 @@ class GPT:
         # print(output)
         return output
 
-    def forward(self, ad_3p_stage='planning', last_answers={'PREVIOUS': None, 'CURRNET': None}, gif_url=''):
+    def forward(self, ad_3p_stage='planning', last_answers={'PREVIOUS': None, 'CURRNET': None}, mp4_url=''):
         success = False
         while not success:
             induction_text = None
             try:
-                induction_text = self.generate(ad_3p_stage=ad_3p_stage, last_answers=last_answers, gif_url=gif_url)
+                induction_text = self.generate(ad_3p_stage=ad_3p_stage, last_answers=last_answers, mp4_url=mp4_url)
             except Exception as e:
                 print(e, induction_text)
                 success = False

@@ -183,7 +183,7 @@ if __name__ == "__main__":
             tokenizer.pad_token_id = 50277
 
             vision_x, inputs = get_model_inputs(video_path, instruction, model, image_processor, tokenizer)
-            print(vision_x.shape)   # torch.Size([1, 1, 16, 3, 336, 336])
+            # print(vision_x.shape)   # torch.Size([1, 1, 16, 3, 336, 336])
 
             # black attack
             noise = get_noise(model=model, inputs=inputs, vision_x=vision_x, epsilon=args.eps, dire=args.dire)
