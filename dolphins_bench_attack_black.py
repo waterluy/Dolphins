@@ -178,7 +178,8 @@ if __name__ == "__main__":
     METHOD = args.method
     model, image_processor, tokenizer = load_pretrained_modoel()
     device = model.device
-    model.attack = True
+    tokenizer.eos_token_id = 50277
+    tokenizer.pad_token_id = 50277
 
     generation_kwargs = {'max_new_tokens': 512, 'temperature': 1,
                                 'top_k': 0, 'top_p': 1, 'no_repeat_ngram_size': 3, 'length_penalty': 1,
@@ -214,9 +215,6 @@ if __name__ == "__main__":
             if instruction == '':
                 continue
 
-            tokenizer.eos_token_id = 50277
-            tokenizer.pad_token_id = 50277
-
             vision_x, inputs = get_model_inputs(video_path, instruction, model, image_processor, tokenizer)
 
             # black attack
@@ -238,7 +236,8 @@ if __name__ == "__main__":
             generated_text = tokenizer.batch_decode(generated_tokens)
             last_answer_index = generated_text[0].rfind("<answer>")
             content_after_last_answer = generated_text[0][last_answer_index + len("<answer>"):]
-            
+            final_answer = content_after_last_answer[:content_after_last_answer.rfind("<|endofchunk|>")]
+
             print(f"\n{video_path}\n")
             print(f"\n\ninstruction: {instruction}\ndolphins answer: {content_after_last_answer}\n\n")
             # 写入json行数据
@@ -246,7 +245,7 @@ if __name__ == "__main__":
                 json.dumps({
                     "unique_id": unique_id,
                     "task_name": task_name,
-                    "pred": content_after_last_answer,
+                    "pred": final_answer,
                     "gt": ground_truth,
                     "label": label
                 }) + "\n"

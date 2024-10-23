@@ -31,7 +31,7 @@ for transfer in "${transfer_values[@]}"; do
             # 检查PGD实验的输出文件是否存在
             if [ ! -f "$pgd_output_file" ]; then
                 echo "Running experiment PGD with transfer=$transfer eps=$eps, steps=$steps"
-                python dolphins_bench_attack_black.py --method pgdlinf --transfer "$transfer" --eps "$eps" --steps "$steps"     # >> output_eps_${eps}_iter_${iter}.log 2>&1
+                python dolphins_bench_attack_black.py --method "pgdlinf" --transfer "$transfer" --eps "$eps" --steps "$iter"     # >> output_eps_${eps}_iter_${iter}.log 2>&1
                 python tools/dolphin_evaluate.py --exp bench_attack_black_${transfer}_pgdlinf_eps${eps}_steps${steps}
                 echo "Finished experiment PGD with transfer=$transfer eps=$eps, steps=$steps"
             else
