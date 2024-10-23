@@ -11,8 +11,7 @@ for eps in "${eps_values[@]}"; do
     for iter in "${iter_values[@]}"; do
         # 定义输出文件路径
         coi_output_file="results/bench_attack_coi_eps${eps}_iter${iter}_query${query}/dolphin_output.json"
-        pgd_output_file="results/bench_attack_coi_eps${eps}_iter${iter}_query${query}/dolphin_output.json"
-        
+                
         # 检查COI实验的输出文件是否存在
         if [ ! -f "$coi_output_file" ]; then
             echo "Running experiment COI with eps=$eps, iter=$iter query=$query"

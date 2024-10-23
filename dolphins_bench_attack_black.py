@@ -32,6 +32,8 @@ from peft import (
     PeftConfig,
     PeftModel
 )
+import pickle
+from torchvision import transforms
 
 def setup_seed(seed):
     torch.manual_seed(seed)
@@ -124,30 +126,56 @@ def get_model_inputs(video_path, instruction, model, image_processor, tokenizer)
 
     return vision_x, inputs
 
-def get_noise(model, vision_x, inputs, epsilon=0.001, dire='pos'):
-    noise = torch.zeros_like(vision_x).to(device).half().cuda()
-    noise.requires_grad = True
-    loss = model(
-        vision_x=(vision_x).half().cuda() + noise,
-        lang_x=inputs["input_ids"].cuda(),
-        attention_mask=inputs["attention_mask"].cuda(),
-        labels=None,
-    )
-    # print(loss.logits.shape)    # torch.Size([1, 20, 50281])
-    loss = torch.norm(loss.logits, p=2)
-    loss.backward()
-    grad = noise.grad.detach()
-    if dire == 'neg':
-        noise = noise - epsilon * grad.sign()
+
+def normalize(tensor, mean, std):
+    mean = torch.tensor(mean).view(1, 3, 1, 1).half().to(tensor.device)
+    std = torch.tensor(std).view(1, 3, 1, 1).half().to(tensor.device)
+    return (tensor - mean) / std
+
+def denormalize(tensor, mean, std):
+    mean = torch.tensor(mean).view(1, 3, 1, 1).half().to(tensor.device)
+    std = torch.tensor(std).view(1, 3, 1, 1).half().to(tensor.device)
+    return tensor * std + mean
+
+
+transfer2folder = {
+    'drivelm': '/home/beihang/wlu/ADLLM/DriveLM/challenge/llama_adapter_v2_multimodal7b/black',
+
+}
+
+
+def black_attack(vision_x):
+    # print(vision_x.shape)   # torch.Size([1, 1, 16, 3, 336, 336])
+    if METHOD == 'fgsm':
+        noise_path = os.path.join(transfer2folder[TRANSFER], f'{TRANSFER}_{METHOD}_eps{EPS}_pos.pkl')
+    elif METHOD == 'pgdlinf':
+        noise_path = os.path.join(transfer2folder[TRANSFER], f'{TRANSFER}_{METHOD}_eps{EPS}_steps{STEPS}_pos.pkl')
     else:
-        noise = noise + epsilon * grad.sign()
-    return noise.detach()
+        raise NotImplementedError
+    with open(noise_path, 'rb') as f:
+        raw_noise = pickle.load(f)
+    resize_to_336 = transforms.Resize((vision_x.shape[4], vision_x.shape[5]))
+    resized_noise = resize_to_336(raw_noise)
+    stacked_noise = torch.stack([resized_noise for _ in range(vision_x.shape[2])], dim=0).unsqueeze(0).unsqueeze(0)
+    new_imgs = denormalize(vision_x, mean=image_mean, std=image_std) + stacked_noise.to(vision_x.device)
+    new_imgs = normalize(new_imgs, mean=image_mean, std=image_std)
+    return new_imgs
+
+image_mean = [0.48145466, 0.4578275, 0.40821073]
+image_std = [0.26862954, 0.26130258, 0.27577711]
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--eps', type=float, default=0.01)
-    parser.add_argument('--dire', type=str, default='pos', choices=['pos', 'neg'])
+    parser.add_argument('--eps', type=float, default=0.2)
+    parser.add_argument('--steps', type=int, default=100)
+    parser.add_argument('--method', type=str, default='pgdlinf', choices=['fgsm', 'pgdlinf'])
+    parser.add_argument('--transfer', type=str, default='drivelm', choices=['drivelm'])
     args = parser.parse_args()
+    EPS = args.eps
+    STEPS = args.steps
+    TRANSFER = args.transfer
+    METHOD = args.method
     model, image_processor, tokenizer = load_pretrained_modoel()
     device = model.device
     model.attack = True
@@ -156,10 +184,17 @@ if __name__ == "__main__":
                                 'top_k': 0, 'top_p': 1, 'no_repeat_ngram_size': 3, 'length_penalty': 1,
                                 'do_sample': False,
                                 'early_stopping': True}
-    json_file = f'results/bench_attack_fgsm_white_eps{args.eps}_dire{args.dire}.json'
+    
+    if METHOD == 'fgsm':
+        folder = f'results/bench_attack_black_{TRANSFER}_{METHOD}_eps{EPS}'
+    elif METHOD == 'pgdlinf':
+        folder = f'results/bench_attack_black_{TRANSFER}_{METHOD}_eps{EPS}_steps{STEPS}'
+    else:
+        raise NotImplementedError
+    os.makedirs(folder, exist_ok=True)
+    json_file = os.path.join(folder, 'dolphin_output.json')
     with open('playground/dolphins_bench/dolphins_benchmark.json', 'r') as file:
         data = json.load(file)
-    # random.shuffle(data)
 
     with open(json_file, 'w') as file:
         # 遍历JSON数据
@@ -183,14 +218,13 @@ if __name__ == "__main__":
             tokenizer.pad_token_id = 50277
 
             vision_x, inputs = get_model_inputs(video_path, instruction, model, image_processor, tokenizer)
-            # print(vision_x.shape)   # torch.Size([1, 1, 16, 3, 336, 336])
 
             # black attack
-            noise = get_noise(model=model, inputs=inputs, vision_x=vision_x, epsilon=args.eps, dire=args.dire)
+            noisy_vision_x = black_attack(vision_x)
 
             # inference
             generated_tokens = model.generate(
-                vision_x=vision_x.half().cuda() + noise,
+                vision_x=noisy_vision_x.half().cuda(),
                 lang_x=inputs["input_ids"].cuda(),
                 attention_mask=inputs["attention_mask"].cuda(),
                 num_beams=3,
