@@ -148,7 +148,7 @@ def black_attack(vision_x):
     # print(vision_x.shape)   # torch.Size([1, 1, 16, 3, 336, 336])
     if METHOD == 'fgsm':
         noise_path = os.path.join(transfer2folder[TRANSFER], f'{TRANSFER}_{METHOD}_eps{EPS}_pos.pkl')
-    elif METHOD == 'pgdlinf':
+    elif 'pgd' in METHOD:
         noise_path = os.path.join(transfer2folder[TRANSFER], f'{TRANSFER}_{METHOD}_{LP}_eps{EPS}_steps{STEPS}_pos.pkl')
     else:
         raise NotImplementedError
