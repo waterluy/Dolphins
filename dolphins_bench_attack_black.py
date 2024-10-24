@@ -149,7 +149,7 @@ def black_attack(vision_x):
     if METHOD == 'fgsm':
         noise_path = os.path.join(transfer2folder[TRANSFER], f'{TRANSFER}_{METHOD}_eps{EPS}_pos.pkl')
     elif METHOD == 'pgdlinf':
-        noise_path = os.path.join(transfer2folder[TRANSFER], f'{TRANSFER}_{METHOD}_eps{EPS}_steps{STEPS}_pos.pkl')
+        noise_path = os.path.join(transfer2folder[TRANSFER], f'{TRANSFER}_{METHOD}_{LP}_eps{EPS}_steps{STEPS}_pos.pkl')
     else:
         raise NotImplementedError
     with open(noise_path, 'rb') as f:
@@ -169,13 +169,15 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--eps', type=float, default=0.2)
     parser.add_argument('--steps', type=int, default=100)
-    parser.add_argument('--method', type=str, default='pgdlinf', choices=['fgsm', 'pgdlinf'])
+    parser.add_argument('--method', type=str, default='pgdlinf', choices=['fgsm', 'pgd'])
+    parser.add_argument('--lp', type=str, default='linf', choices=['linf'])
     parser.add_argument('--transfer', type=str, default='drivelm', choices=['drivelm'])
     args = parser.parse_args()
     EPS = args.eps
     STEPS = args.steps
     TRANSFER = args.transfer
     METHOD = args.method
+    LP = args.lp
     model, image_processor, tokenizer = load_pretrained_modoel()
     device = model.device
     tokenizer.eos_token_id = 50277
@@ -188,8 +190,8 @@ if __name__ == "__main__":
     
     if METHOD == 'fgsm':
         folder = f'results/bench_attack_black_{TRANSFER}_{METHOD}_eps{EPS}'
-    elif METHOD == 'pgdlinf':
-        folder = f'results/bench_attack_black_{TRANSFER}_{METHOD}_eps{EPS}_steps{STEPS}'
+    elif 'pgd' in METHOD:
+        folder = f'results/bench_attack_black_{TRANSFER}_{METHOD}_{LP}_eps{EPS}_steps{STEPS}'
     else:
         raise NotImplementedError
     os.makedirs(folder, exist_ok=True)
