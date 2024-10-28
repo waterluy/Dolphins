@@ -207,7 +207,7 @@ def coi_attack_stage1(
     texts = []
     answers = []
     for q in range(QUERY):
-        induction_text = gpt.forward(ad_3p_stage=ad_3p_stage, last_answers=last_answers, mp4_url=mp4_url)
+        induction_text = gpt.forward_induction_text(ad_3p_stage=ad_3p_stage, last_answers=last_answers, mp4_url=mp4_url)
         texts.append(induction_text)
         noise = coi_attack_stage2(induction_text, noise_start=noise)
         final_answer = inference(

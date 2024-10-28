@@ -88,7 +88,7 @@ class GPT:
         # print(output)
         return output
 
-    def forward(self, ad_3p_stage='planning', last_answers={'PREVIOUS': None, 'CURRNET': None}, mp4_url=''):
+    def forward_induction_text(self, ad_3p_stage='planning', last_answers={'PREVIOUS': None, 'CURRNET': None}, mp4_url=''):
         success = False
         while not success:
             induction_text = None
@@ -98,7 +98,10 @@ class GPT:
                 print(e, induction_text)
                 success = False
             else:
-                success = True
+                if ('github' not in induction_text) and ('GitHub' not in induction_text) and ('URL' not in induction_text) and ('url' not in induction_text):
+                    success = True
+                else:
+                    success = False
         return induction_text
 
 

@@ -166,11 +166,11 @@ def get_ad_3p(task):
 def coi_attack_stage2(
         induction_text,
         noise_start,
+        optimizer,
+        ori_vision_x,
 ):    
-    texts = [induction_text for _ in range(vision_x.shape[2])]
-    alpha = 2 * EPS / ITER
+    texts = [induction_text for _ in range(ori_vision_x.shape[2])]
     resize_to_224 = transforms.Resize((224, 224))
-    optimizer = torch.optim.Adam([noise_start], lr=alpha)
 
     for _ in range(ITER):
         total_loss = 0
@@ -179,7 +179,7 @@ def coi_attack_stage2(
         # print(text_features.shape)  # torch.Size([16, 512])
         text_features_normed = F.normalize(text_features, dim=-1)
         # print(text_features_normed.shape)   # torch.Size([16, 512])
-        denormed_vision_x = denormalize(vision_x, mean=image_mean, std=image_std)[0, 0, :]
+        denormed_vision_x = denormalize(ori_vision_x, mean=image_mean, std=image_std)[0, 0, :]
         noisy_vision_x = denormed_vision_x.cuda() + noise_start.cuda()
         # print(noisy_vision_x.shape) # torch.Size([16, 3, 336, 336])
         normed_noisy_vision_x = normalize(noisy_vision_x, mean=image_mean, std=image_std)
@@ -211,10 +211,18 @@ def coi_attack_stage1(
     noise = torch.zeros_like(ori_vision_x[0, 0, :], requires_grad=True)
     texts = []
     answers = []
+    
+    alpha = 2 * EPS / ITER
+    optimizer = torch.optim.Adam([noise], lr=alpha)
     for q in range(QUERY):
-        induction_text = gpt.forward(ad_3p_stage=ad_3p_stage, last_answers=last_answers, mp4_url=mp4_url)
+        induction_text = gpt.forward_induction_text(ad_3p_stage=ad_3p_stage, last_answers=last_answers, mp4_url=mp4_url)
         texts.append(induction_text)
-        noise = coi_attack_stage2(induction_text, noise_start=noise)
+        noise = coi_attack_stage2(
+            induction_text, 
+            noise_start=noise,
+            optimizer=optimizer,
+            ori_vision_x=ori_vision_x
+        )
         final_answer = inference(
             input_vision_x=ori_vision_x.clone().half().cuda() + noise.cuda(), 
             inputs=ori_inputs
@@ -268,6 +276,10 @@ if __name__ == "__main__":
                 ok_unique_id.append(json.loads(line)['unique_id'])
     gpt = GPT()
     induction_records = []
+    coi_records = os.path.join(folder, 'records.json')
+    if os.path.exists(coi_records):
+        with open(coi_records, 'r') as file:
+            induction_records = json.load(file)
 
     model, image_processor, tokenizer = load_pretrained_modoel()
     tokenizer.eos_token_id = 50277
@@ -331,6 +343,5 @@ if __name__ == "__main__":
                     "induction_answers": induction_answers,
                 })
     finally:
-        coi_records = os.path.join(folder, 'records.json')
         with open(coi_records, 'w') as file:
             json.dump(induction_records, file, indent=4)

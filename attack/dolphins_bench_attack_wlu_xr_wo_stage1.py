@@ -167,7 +167,7 @@ def coi_attack_stage2_only(
 ):    
     mp4_url = "https://github.com/waterluy/Dolphins/blob/wlu-main/{}".format(video_path)
     ad_3p_stage = get_ad_3p(task)
-    induction_text = gpt.forward(ad_3p_stage=ad_3p_stage, last_answers=None, mp4_url=mp4_url)
+    induction_text = gpt.forward_induction_text(ad_3p_stage=ad_3p_stage, last_answers=None, mp4_url=mp4_url)
     noise = torch.zeros_like(ori_vision_x[0, 0, :], requires_grad=True)
     
     texts = [induction_text for _ in range(vision_x.shape[2])]
