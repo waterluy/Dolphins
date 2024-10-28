@@ -69,9 +69,10 @@ class GPT:
     
     def generate(self, ad_3p_stage='planning', last_answers={'PREVIOUS': None, 'CURRENT': None}, mp4_url=''): 
         prompts = ""
-        if last_answers['PREVIOUS'] is not None and last_answers['CURRENT'] is not None:
-            prompts += PREFIX.format_map(last_answers)
-            prompts += "\n"
+        if last_answers is not None:
+            if last_answers['PREVIOUS'] is not None and last_answers['CURRENT'] is not None:
+                prompts += PREFIX.format_map(last_answers)
+                prompts += "\n"
         prompts += self.stage2template[ad_3p_stage]
         prompts += "\n"
 

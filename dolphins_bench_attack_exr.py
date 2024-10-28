@@ -267,11 +267,13 @@ if __name__ == "__main__":
                                 'early_stopping': True}
     if args.one:
         folder = f'results/bench_attack_exrwoori1_white_{args.lp}_eps{args.eps}_steps{args.steps}_{args.dire}'
+        houzhui = '_multi_woori'
     else:
         folder = f'results/bench_attack_exrwoori_white_{args.lp}_eps{args.eps}_steps{args.steps}_{args.dire}'
+        houzhui = '_multi'
     os.makedirs(folder, exist_ok=True)
     json_file = os.path.join(folder, 'dolphin_output.json')
-    bench_path, version_num = gen_multi_version(samples=args.samples)
+    bench_path, version_num = gen_multi_version(samples=args.samples, houzhui=houzhui)
     with open(bench_path, 'r') as file:
         data = json.load(file)
 

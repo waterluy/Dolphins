@@ -66,8 +66,8 @@ class GPT:
         return new_version
 
 
-def gen_multi_version(samples=5, bench_path='playground/dolphins_bench/dolphins_benchmark.json'):
-    output_path = bench_path.replace('.json', '_multi_woori.json')
+def gen_multi_version(samples=5, bench_path='playground/dolphins_bench/dolphins_benchmark.json', houzhui='_multi_woori'):
+    output_path = bench_path.replace('.json', f'{houzhui}.json')
     if os.path.exists(output_path):
         with open(output_path, 'r') as file:
             data = json.load(file)

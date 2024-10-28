@@ -160,10 +160,16 @@ def get_ad_3p(task):
     else:
         raise ValueError("Invalid task name: {}".format(task))
 
-def coi_attack_stage2(
-        induction_text,
-        noise_start,
+def coi_attack_stage2_only(
+        task, 
+        video_path, 
+        ori_vision_x,
 ):    
+    mp4_url = "https://github.com/waterluy/Dolphins/blob/wlu-main/{}".format(video_path)
+    ad_3p_stage = get_ad_3p(task)
+    induction_text = gpt.forward(ad_3p_stage=ad_3p_stage, last_answers=None, mp4_url=mp4_url)
+    noise = torch.zeros_like(ori_vision_x[0, 0, :], requires_grad=True)
+    
     texts = [induction_text for _ in range(vision_x.shape[2])]
     text_features = model_clip.encode_text(clip.tokenize(texts).cuda())
     # print(text_features.shape)  # torch.Size([16, 512])
@@ -175,8 +181,8 @@ def coi_attack_stage2(
 
     for _ in range(ITER):
         total_loss = 0
-        noise_start.requires_grad = True
-        noisy_vision_x = denormed_vision_x.cuda() + noise_start.cuda()
+        noise.requires_grad = True
+        noisy_vision_x = denormed_vision_x.cuda() + noise.cuda()
         # print(noisy_vision_x.shape) # torch.Size([16, 3, 336, 336])
         normed_noisy_vision_x = normalize(noisy_vision_x, mean=image_mean, std=image_std)
         image_features = model_clip.encode_image(resize_to_224(normed_noisy_vision_x))
@@ -187,37 +193,11 @@ def coi_attack_stage2(
         # print(total_loss.shape) # torch.Size([16])
         total_loss = total_loss.mean()
         # print(total_loss, total_loss.shape) 
-        grad = torch.autograd.grad(total_loss, noise_start)[0]    # torch.Size([])
-        noise_start = noise_start.detach() + alpha * grad.sign()
-        noise_start = torch.clamp(noise_start, -EPS, EPS)
+        grad = torch.autograd.grad(total_loss, noise)[0]    # torch.Size([])
+        noise = noise.detach() + alpha * grad.sign()
+        noise = torch.clamp(noise, -EPS, EPS)
 
-    return noise_start.detach()
-
-def coi_attack_stage1(
-        task, 
-        video_path, 
-        instruction, 
-        ori_vision_x,
-        ori_inputs,
-):
-    mp4_url = "https://github.com/waterluy/Dolphins/blob/wlu-main/{}".format(video_path)
-    ad_3p_stage = get_ad_3p(task)
-    last_answers={'PREVIOUS': None, 'CURRENT': None}
-    noise = torch.zeros_like(ori_vision_x[0, 0, :], requires_grad=True)
-    texts = []
-    answers = []
-    for q in range(QUERY):
-        induction_text = gpt.forward(ad_3p_stage=ad_3p_stage, last_answers=last_answers, mp4_url=mp4_url)
-        texts.append(induction_text)
-        noise = coi_attack_stage2(induction_text, noise_start=noise)
-        final_answer = inference(
-            input_vision_x=ori_vision_x.clone().half().cuda() + noise.cuda(), 
-            inputs=ori_inputs
-        )
-        answers.append(final_answer)
-        last_answers['PREVIOUS'] = last_answers['CURRENT']
-        last_answers['CURRENT'] = final_answer
-    return noise.detach(), texts, answers
+    return noise.detach()
 
 def inference(input_vision_x, inputs):
     inference_tokens = model.generate(
@@ -250,11 +230,10 @@ if __name__ == "__main__":
     parser.add_argument('--query', type=int, default=10)
     args = parser.parse_args()
     EPS = args.eps
-    ITER = args.iter
-    QUERY = args.query
+    ITER = args.iter * args.query
 
     ok_unique_id = []
-    folder = f'results/bench_attack_coi_eps{EPS}_iter{ITER}_query{QUERY}'
+    folder = f'results/bench_attack_coi-wo-stage1_eps{EPS}_iter{ITER}'
     os.makedirs(folder, exist_ok=True)
     json_path = os.path.join(folder, 'dolphin_output.json')
     if os.path.exists(json_path):
@@ -277,55 +256,40 @@ if __name__ == "__main__":
 
     with open('playground/dolphins_bench/dolphins_benchmark.json', 'r') as file:
         data = json.load(file)
-    # !!!!!! 追加模式记得注释掉！！！！！不要重复写入
-    target_fieldnames = ['task_name', 'video_path', 'instruction', 'ground_truth', 'target']
+    
+    with open(json_path, 'a') as file:
+        # 遍历JSON数据
+        for entry in data:
+            unique_id = entry["id"]
+            label = entry['label']
+            task_name = entry['task_name']
+            video_path = entry['video_path'][entry['video_path'].find('/')+1:]
+            # 从conversations中提取human的value和gpt的value
+            instruction = entry['conversations'][0]['value']
+            ground_truth = entry['conversations'][1]['value']
 
-    try:
-        with open(json_path, 'a') as file:
-            # 遍历JSON数据
-            for entry in data:
-                unique_id = entry["id"]
-                label = entry['label']
-                task_name = entry['task_name']
-                video_path = entry['video_path'][entry['video_path'].find('/')+1:]
-                # 从conversations中提取human的value和gpt的value
-                instruction = entry['conversations'][0]['value']
-                ground_truth = entry['conversations'][1]['value']
+            if unique_id in ok_unique_id:
+                continue
+            
+            vision_x, inputs = get_model_inputs(video_path=video_path, instruction=instruction, model=model, image_processor=image_processor, tokenizer=tokenizer)
 
-                if unique_id in ok_unique_id:
-                    continue
-                
-                vision_x, inputs = get_model_inputs(video_path=video_path, instruction=instruction, model=model, image_processor=image_processor, tokenizer=tokenizer)
+            noise = coi_attack_stage2_only(task=task_name, video_path=video_path, ori_vision_x=vision_x)
 
-                noise, induction_texts, induction_answers = coi_attack_stage1(task=task_name, video_path=video_path, ori_vision_x=vision_x, instruction=instruction, ori_inputs=inputs)
+            # inference  !!!!!记得加noise
+            final_answer = inference(
+                input_vision_x=vision_x.half().cuda()+noise.cuda(),
+                inputs=inputs,
+            )
 
-                # inference  !!!!!记得加noise
-                final_answer = induction_answers[-1]
-                # final_answer = inference(
-                #     input_vision_x=vision_x.half().cuda()+noise.cuda(),
-                #     inputs=inputs,
-                # )
-
-                print(f"\n{video_path}\n")
-                print(f"\n\ninstruction: {instruction}\ndolphins answer: {final_answer}\n\n")
-                # 写入json行数据
-                file.write(
-                    json.dumps({
-                        "unique_id": unique_id,
-                        "task_name": task_name,
-                        "pred": final_answer,
-                        "gt": ground_truth,
-                        "label": label
-                    }) + "\n"
-                )
-                # 记录induction texts
-                induction_records.append({
+            print(f"\n{video_path}\n")
+            print(f"\n\ninstruction: {instruction}\ndolphins answer: {final_answer}\n\n")
+            # 写入json行数据
+            file.write(
+                json.dumps({
                     "unique_id": unique_id,
                     "task_name": task_name,
-                    "induction_records": induction_texts,
-                    "induction_answers": induction_answers,
-                })
-    finally:
-        coi_records = os.path.join(folder, 'records.json')
-        with open(coi_records, 'w') as file:
-            json.dump(induction_records, file, indent=4)
+                    "pred": final_answer,
+                    "gt": ground_truth,
+                    "label": label
+                }) + "\n"
+            )
