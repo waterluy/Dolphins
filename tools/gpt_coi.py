@@ -35,7 +35,7 @@ PREFIX = "Based on the driver's two outputs, the previous output was '{PREVIOUS}
 class GPT:
     def __init__(self):
         with open("tools/api.json", 'r') as file:
-            data = json.load(file)["gen_muti"]
+            data = json.load(file)["aihubmix_wlu"]
         self.client = OpenAI(base_url=data["base_url"],api_key=data["api_key"])
         self.stage2template = {
             "perception": P1,

@@ -144,7 +144,7 @@ def denormalize(tensor, mean, std):
 def just_attack(
         ori_vision_x,
 ):    
-    induction_text = "Turn left."
+    induction_text = "The banana is yellow."
     texts = [induction_text for _ in range(vision_x.shape[2])]
     text_features = model_clip.encode_text(clip.tokenize(texts).cuda())
     # print(text_features.shape)  # torch.Size([16, 512])
@@ -209,7 +209,7 @@ if __name__ == "__main__":
     ITER = args.iter * args.query
 
     ok_unique_id = []
-    folder = f'results/bench_attack_coi-wo-stage2-fix_eps{EPS}_iter{ITER}'
+    folder = f'results/bench_attack_coi-wo-stage2-fix1_eps{EPS}_iter{ITER}'
     os.makedirs(folder, exist_ok=True)
     json_path = os.path.join(folder, 'dolphin_output.json')
     if os.path.exists(json_path):
