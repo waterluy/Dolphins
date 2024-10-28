@@ -6,6 +6,10 @@ import json
 import argparse
 from multiprocessing import Pool
 from openai import OpenAI
+import base64
+from PIL import Image
+import io
+import torch
 
 P1 = "What will seriously interfere with the driver's observation in the driving scene video? " \
     "Your answer should be based on the **opposite** description of the actual scene in the video. " \
@@ -54,7 +58,7 @@ class GPT:
         return reply, total_tokens # 返回回复内容 和 总token数
     
     # 准备发给gpt的消息格式
-    def prepare_chatgpt_message(self, prompt, mp4_url):
+    def prepare_chatgpt_message_induction_text(self, prompt, mp4_url):
         system_message = "You are an experienced driver for diving data analysis."
         messages = [{
             "role": "system", 
@@ -67,7 +71,7 @@ class GPT:
         
         return messages
     
-    def generate(self, ad_3p_stage='planning', last_answers={'PREVIOUS': None, 'CURRENT': None}, mp4_url=''): 
+    def generate_induction_text(self, ad_3p_stage='planning', last_answers={'PREVIOUS': None, 'CURRENT': None}, mp4_url=''): 
         prompts = ""
         if last_answers is not None:
             if last_answers['PREVIOUS'] is not None and last_answers['CURRENT'] is not None:
@@ -77,7 +81,7 @@ class GPT:
         prompts += "\n"
 
         output = ""
-        messages = self.prepare_chatgpt_message(prompts, mp4_url)
+        messages = self.prepare_chatgpt_message_induction_text(prompts, mp4_url)
         reply, total_tokens = self.call_chatgpt(messages, max_tokens=77)
 
         output += reply
@@ -93,7 +97,7 @@ class GPT:
         while not success:
             induction_text = None
             try:
-                induction_text = self.generate(ad_3p_stage=ad_3p_stage, last_answers=last_answers, mp4_url=mp4_url)
+                induction_text = self.generate_induction_text(ad_3p_stage=ad_3p_stage, last_answers=last_answers, mp4_url=mp4_url)
             except Exception as e:
                 print(e, induction_text)
                 success = False
@@ -104,6 +108,73 @@ class GPT:
                     success = False
         return induction_text
 
+    def prepare_chatgpt_message_adqa(self, prompt, imgs):
+        system_message = "You are an experienced driver, help analysis the driving scenario."
+        messages = [{
+            "role": "system", 
+            "content": system_message
+        }]
+        content = [{
+            "type": "text", 
+            "text": prompt
+        }]
+        for idx in imgs.shape[0]:
+            img = imgs[idx]
+            # 转换img tensor为base64格式:
+            base64_image = tensor_to_base64(img)
+            content.append({
+                "type": "image_url", 
+                "image_url": {
+                    "url": f"data:image/jpeg;base64,{base64_image}"
+                }
+            })
+        messages.append({
+            "role": "user", 
+            "content": content
+        })
+        
+        return messages
+    
+    def generate_adqa(self, question, imgs): 
+        prompts = ''
+        prompts += "Observe the frame sequence of the video and answer the question: "
+        prompts += question
+
+        output = ""
+        messages = self.prepare_chatgpt_message_induction_text(prompts, imgs)
+        reply, total_tokens = self.call_chatgpt(messages, max_tokens=77)
+
+        output += reply
+        output += "\n\n"
+
+        output = output[:-2]
+
+        # print(output)
+        return output
+    
+    def forward_adqa(self, question, imgs):
+        success = False
+        while not success:
+            answer = ''
+            try:
+                answer = self.generate_adqa(question, imgs)
+            except Exception as e:
+                print(e, answer)
+                success = False
+            else:
+                success = True
+        return answer
+
+def tensor_to_base64(img_tensor):
+    # 图像是 (C, H, W) RGB，转换为 (H, W, C)
+    img_array = img_tensor.permute(1, 2, 0).cpu().numpy()
+    # 将 NumPy 数组转换为 PIL 图像
+    img = Image.fromarray((img_array * 255).astype('uint8'))  # 如果 tensor 范围在 [0, 1]，则乘以 255
+    # 将 PIL 图像保存到内存中并编码为 Base64
+    buffered = io.BytesIO()
+    img.save(buffered, format="JPEG")
+    img_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
+    return img_base64
 
 if __name__ == "__main__":
     gpt = GPT()

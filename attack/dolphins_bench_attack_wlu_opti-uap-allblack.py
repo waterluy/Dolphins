@@ -214,6 +214,7 @@ def coi_attack_stage1(
 
     alpha = 2 * EPS / ITER
     optimizer = torch.optim.Adam([noise], lr=alpha)
+    ori_answer = None
     for q in range(QUERY):
         induction_text = gpt.forward_induction_text(ad_3p_stage=ad_3p_stage, last_answers=last_answers, mp4_url=mp4_url)
         texts.append(induction_text)
@@ -225,14 +226,19 @@ def coi_attack_stage1(
         )
         # 多帧图对应同一个通用的noise
         final_noise = torch.cat([noise] * ori_vision_x.shape[2])
-        final_answer = inference(
-            input_vision_x=ori_vision_x.clone().half().cuda() + final_noise.cuda(), 
-            inputs=ori_inputs
-        )
-        answers.append(final_answer)
-        last_answers['PREVIOUS'] = last_answers['CURRENT']
-        last_answers['CURRENT'] = final_answer
-    return noise.detach(), texts, answers
+        if q != (QUERY-1):
+            noisy_imgs = (denormalize(ori_vision_x.detach()) + final_noise.detach()).squeeze()
+            final_answer = gpt.forward_adqa(question=instruction, imgs=noisy_imgs)
+            if ori_answer is None:
+                ori_answer = final_answer
+            if judge_change(ori=ori_answer, now=final_answer):
+                break
+            last_answers['PREVIOUS'] = last_answers['CURRENT']
+            last_answers['CURRENT'] = final_answer
+    return final_noise.detach(), texts
+
+def judge_change(ori, now):
+    pass
 
 def inference(input_vision_x, inputs):
     inference_tokens = model.generate(
@@ -269,7 +275,7 @@ if __name__ == "__main__":
     QUERY = args.query
 
     ok_unique_id = []
-    folder = f'results/bench_attack_coi-opti-uap_eps{EPS}_iter{ITER}_query{QUERY}'
+    folder = f'results/bench_attack_coi-opti-uap-allblack_eps{EPS}_iter{ITER}_query{QUERY}'
     os.makedirs(folder, exist_ok=True)
     json_path = os.path.join(folder, 'dolphin_output.json')
     if os.path.exists(json_path):
@@ -292,8 +298,6 @@ if __name__ == "__main__":
 
     with open('playground/dolphins_bench/dolphins_benchmark.json', 'r') as file:
         data = json.load(file)
-    # !!!!!! 追加模式记得注释掉！！！！！不要重复写入
-    target_fieldnames = ['task_name', 'video_path', 'instruction', 'ground_truth', 'target']
 
     try:
         with open(json_path, 'a') as file:
@@ -312,14 +316,13 @@ if __name__ == "__main__":
                 
                 vision_x, inputs = get_model_inputs(video_path=video_path, instruction=instruction, model=model, image_processor=image_processor, tokenizer=tokenizer)
 
-                noise, induction_texts, induction_answers = coi_attack_stage1(task=task_name, video_path=video_path, ori_vision_x=vision_x, instruction=instruction, ori_inputs=inputs)
+                noise, induction_texts, = coi_attack_stage1(task=task_name, video_path=video_path, ori_vision_x=vision_x, instruction=instruction, ori_inputs=inputs)
 
                 # inference  !!!!!记得加noise
-                final_answer = induction_answers[-1]
-                # final_answer = inference(
-                #     input_vision_x=vision_x.half().cuda()+noise.cuda(),
-                #     inputs=inputs,
-                # )
+                final_answer = inference(
+                    input_vision_x=vision_x.half().cuda()+noise.cuda(),
+                    inputs=inputs,
+                )
 
                 print(f"\n{video_path}\n")
                 print(f"\n\ninstruction: {instruction}\ndolphins answer: {final_answer}\n\n")
