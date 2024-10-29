@@ -180,8 +180,8 @@ class GPT:
     
     def generate_judge(self, ori, now):
         prompts = ''
-        prompts += "Determine whether the following two sentences contain semantically opposite or different content, with a response of 1 indicating inclusion and 0 indicating non inclusion. "
-        prompts += f"The two sentences are: 1. {ori}, 2. {now}. Don't output any additional information."
+        prompts += "Determine whether the following two sentence strings have similar meanings, with a response of 1 indicating 'yes' and 0 indicating 'no'. "
+        prompts += f"The two strings are: 1. \{{ori}}, 2. \{{now}}. Don't output any additional information."
 
         output = ""
         messages = self.prepare_chatgpt_message_judge(prompts)

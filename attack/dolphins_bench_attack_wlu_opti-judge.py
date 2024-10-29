@@ -231,13 +231,14 @@ def coi_attack_stage1(
         answers.append(final_answer)
         if ori_answer is None:
             ori_answer = final_answer
-        if judge_change(ori=ori_answer, now=final_answer) == 1:
-            break
+        else:
+            if judge(ori=ori_answer, now=final_answer) == 0:
+                break
         last_answers['PREVIOUS'] = last_answers['CURRENT']
         last_answers['CURRENT'] = final_answer
     return noise.detach(), texts, answers
 
-def judge_change(ori, now):
+def judge(ori, now):
     return gpt.forward_judge(ori=ori, now=now)
 
 def inference(input_vision_x, inputs):
@@ -302,8 +303,6 @@ if __name__ == "__main__":
 
     with open('playground/dolphins_bench/dolphins_benchmark.json', 'r') as file:
         data = json.load(file)
-    # !!!!!! 追加模式记得注释掉！！！！！不要重复写入
-    target_fieldnames = ['task_name', 'video_path', 'instruction', 'ground_truth', 'target']
 
     try:
         with open(json_path, 'a') as file:
@@ -331,8 +330,8 @@ if __name__ == "__main__":
                 #     inputs=inputs,
                 # )
 
-                print(f"\n{video_path}\n")
-                print(f"\n\ninstruction: {instruction}\ndolphins answer: {final_answer}\n\n")
+                # print(f"\n{video_path}\n")
+                # print(f"\n\ninstruction: {instruction}\ndolphins answer: {final_answer}\n\n")
                 # 写入json行数据
                 file.write(
                     json.dumps({

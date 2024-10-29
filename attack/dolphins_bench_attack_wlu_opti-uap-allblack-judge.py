@@ -231,8 +231,9 @@ def coi_attack_stage1(
             final_answer = gpt.forward_adqa(question=instruction, imgs=noisy_imgs)
             if ori_answer is None:
                 ori_answer = final_answer
-            if judge_change(ori=ori_answer, now=final_answer) == 1:
-                break
+            else:
+                if judge_change(ori=ori_answer, now=final_answer) == 1:
+                    break
             last_answers['PREVIOUS'] = last_answers['CURRENT']
             last_answers['CURRENT'] = final_answer
     return final_noise.detach(), texts
