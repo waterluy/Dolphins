@@ -187,7 +187,7 @@ def coi_attack_stage2(
         # print(image_features.shape) # torch.Size([16, 512])
         image_features_normed = F.normalize(image_features, dim=-1)
         # print(image_features_normed.shape)  # torch.Size([16, 512])
-        total_loss = torch.cosine_similarity(image_features_normed, text_features_normed, dim=1, eps=1e-8)
+        total_loss = - torch.cosine_similarity(image_features_normed, text_features_normed, dim=1, eps=1e-8)
         # print(total_loss.shape) # torch.Size([16])
         total_loss = total_loss.mean()
         # print(total_loss, total_loss.shape) 

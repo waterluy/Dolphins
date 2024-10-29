@@ -180,12 +180,14 @@ def denormalize(tensor, mean, std):
     return tensor * std + mean
 
 def exr_attack(model, vision_x, input_ids_list, attention_mask_list, labels_list=None, epsilon=0.001, steps=10, lp='linf', dire='pos'):
-    noise = torch.zeros_like(vision_x).to(device).half().cuda()
+    noise = torch.zeros_like(vision_x[0, 0, 0:1, :], requires_grad=True)
     alpha = 2 * epsilon / steps
+    optimizer = torch.optim.Adam([noise], lr=alpha)
     denormed_vision_x = denormalize(vision_x, image_mean, image_std)
     for _ in range(steps):
         noise.requires_grad = True
-        vision_x_noise = denormed_vision_x.half().cuda() + noise
+        final_noise = torch.cat([noise] * vision_x.shape[2])
+        vision_x_noise = denormed_vision_x.half().cuda() + noise + final_noise.cuda()
         vision_x_noise = normalize(vision_x_noise, image_mean, image_std)
         if METHOD == 2:
             idx = 0
@@ -200,54 +202,8 @@ def exr_attack(model, vision_x, input_ids_list, attention_mask_list, labels_list
         )[0]
         noise.grad = None
         loss.backward()
-        grad = noise.grad.detach()
-        if lp == 'linf':
-            delta = grad.sign()
-        elif lp == 'l1':
-            delta = grad / torch.norm(grad, p=1)
-        elif lp == 'l2':
-            delta = grad / torch.norm(grad, p=2)
-        else:
-            raise ValueError('lp must be linf, l1 or l2')
-        if dire == 'neg':
-            noise = noise - alpha * delta
-        else:
-            noise = noise + alpha * delta
-        noise = noise.detach()
-    return noise.detach()
-
-def exr_attack_one(model, vision_x, input_ids_list, attention_mask_list, labels_list=None, epsilon=0.001, steps=10, lp='linf', dire='pos'):
-    noise = torch.zeros_like(vision_x).to(device).half().cuda()
-    alpha = 2 * epsilon / steps
-    denormed_vision_x = denormalize(vision_x, image_mean, image_std)
-    idx = 0  # random.randrange(0, version_num)   # random.randrange(start, stop)生成一个范围内的整数，但不包括stop
-    for _ in range(steps):
-        noise.requires_grad = True
-        vision_x_noise = denormed_vision_x.half().cuda() + noise
-        vision_x_noise = normalize(vision_x_noise, image_mean, image_std)
-        loss = model(
-            vision_x=vision_x_noise,
-            lang_x=input_ids_list[idx].cuda(),
-            attention_mask=attention_mask_list[idx].cuda(),
-            labels=labels_list[idx].cuda(),
-            media_locations=None
-        )[0]
-        noise.grad = None
-        loss.backward()
-        grad = noise.grad.detach()
-        if lp == 'linf':
-            delta = grad.sign()
-        elif lp == 'l1':
-            delta = grad / torch.norm(grad, p=1)
-        elif lp == 'l2':
-            delta = grad / torch.norm(grad, p=2)
-        else:
-            raise ValueError('lp must be linf, l1 or l2')
-        if dire == 'neg':
-            noise = noise - alpha * delta
-        else:
-            noise = noise + alpha * delta
-        noise = noise.detach()
+        
+        noise = torch.clamp(noise.detach(), -epsilon, epsilon)
     return noise.detach()
 
 image_mean = [0.48145466, 0.4578275, 0.40821073]

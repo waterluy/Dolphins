@@ -37,6 +37,7 @@ import clip
 import torch.nn.functional as F
 from torchvision import transforms
 from tools.gpt_coi import GPT
+from tools.gpt_eval import GPTEvaluation
 from tqdm import tqdm
 
 def setup_seed(seed):
@@ -187,7 +188,7 @@ def coi_attack_stage2(
         # print(image_features.shape) # torch.Size([16, 512])
         image_features_normed = F.normalize(image_features, dim=-1)
         # print(image_features_normed.shape)  # torch.Size([16, 512])
-        total_loss = torch.cosine_similarity(image_features_normed, text_features_normed, dim=1, eps=1e-8)
+        total_loss = - torch.cosine_similarity(image_features_normed, text_features_normed, dim=1, eps=1e-8)
         # print(total_loss.shape) # torch.Size([16])
         total_loss = total_loss.mean()
         # print(total_loss, total_loss.shape) 
@@ -232,14 +233,14 @@ def coi_attack_stage1(
         if ori_answer is None:
             ori_answer = final_answer
         else:
-            if judge(ori=ori_answer, now=final_answer) == 0:
+            if judge(ori=ori_answer, now=final_answer) < 25:
                 break
         last_answers['PREVIOUS'] = last_answers['CURRENT']
         last_answers['CURRENT'] = final_answer
     return noise.detach(), texts, answers
 
 def judge(ori, now):
-    return gpt.forward_judge(ori=ori, now=now)
+    return gpt_eval.forward(answer=now, GT=ori)
 
 def inference(input_vision_x, inputs):
     inference_tokens = model.generate(
@@ -284,6 +285,7 @@ if __name__ == "__main__":
             for line in file:
                 ok_unique_id.append(json.loads(line)['unique_id'])
     gpt = GPT()
+    gpt_eval = GPTEvaluation()
     induction_records = []
     coi_records = os.path.join(folder, 'records.json')
     if os.path.exists(coi_records):
