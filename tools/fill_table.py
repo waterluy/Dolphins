@@ -24,7 +24,7 @@ def main():
     steps_values = [3, 5, 10, 20, 50, 100]
     dire = "pos"
     lp = "linf"
-    attack_methods = ["pgd", "exr", "exrwoori", "exrwoori1"]
+    attack_methods = ["pgd", "m2", "m3", "m4"]
     # attack_methods = ["exr", "pgd"]
 
     # 输出文件路径
