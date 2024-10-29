@@ -229,9 +229,16 @@ def coi_attack_stage1(
         if q != (QUERY-1):
             noisy_imgs = (denormalize(ori_vision_x.detach(), mean=image_mean, std=image_std) + final_noise.detach()).squeeze()
             final_answer = gpt.forward_adqa(question=instruction, imgs=noisy_imgs)
+            if ori_answer is None:
+                ori_answer = final_answer
+            if judge_change(ori=ori_answer, now=final_answer) == 1:
+                break
             last_answers['PREVIOUS'] = last_answers['CURRENT']
             last_answers['CURRENT'] = final_answer
     return final_noise.detach(), texts
+
+def judge_change(ori, now):
+    return gpt.forward_judge(ori=ori, now=now)
 
 def inference(input_vision_x, inputs):
     inference_tokens = model.generate(
@@ -268,7 +275,7 @@ if __name__ == "__main__":
     QUERY = args.query
 
     ok_unique_id = []
-    folder = f'results/bench_attack_coi-opti-uap-allblack_eps{EPS}_iter{ITER}_query{QUERY}'
+    folder = f'results/bench_attack_coi-opti-uap-allblack-judge_eps{EPS}_iter{ITER}_query{QUERY}'
     os.makedirs(folder, exist_ok=True)
     json_path = os.path.join(folder, 'dolphin_output.json')
     if os.path.exists(json_path):

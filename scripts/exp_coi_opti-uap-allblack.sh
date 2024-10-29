@@ -1,5 +1,5 @@
 #!/bin/bash
-export CUDA_VISIBLE_DEVICES=2
+export CUDA_VISIBLE_DEVICES=4
 
 # 定义可变参数范围
 eps_values=(0.2)
@@ -16,7 +16,7 @@ for eps in "${eps_values[@]}"; do
             # 检查COI实验的输出文件是否存在
             if [ ! -f "$coi_output_file" ]; then
                 echo "Running experiment COI-opti-uap-allblack with eps=$eps, iter=$iter query=$query"
-                python attack/dolphins_bench_attack_wlu_opti-uap.py --eps "$eps" --iter "$iter" --query "$query"    # >> output_eps_${eps}_iter_${iter}.log 2>&1
+                python attack/dolphins_bench_attack_wlu_opti-uap-allblack.py --eps "$eps" --iter "$iter" --query "$query"    # >> output_eps_${eps}_iter_${iter}.log 2>&1
                 python tools/dolphin_evaluate.py --exp bench_attack_coi-opti-uap-allblack_eps${eps}_iter${iter}_query${query}
                 echo "Finished experiment COI-opti-uap-allblack with eps=$eps, iter=$iter"
             else

@@ -164,6 +164,50 @@ class GPT:
             else:
                 success = True
         return answer
+    
+    def prepare_chatgpt_message_judge(self, prompt):
+        system_message = "You are an expert in language comprehension and analysis."
+        messages = [{
+            "role": "system", 
+            "content": system_message
+        }]
+        messages.append({
+            "role": "user", 
+            "content": prompt
+        })
+        
+        return messages
+    
+    def generate_judge(self, ori, now):
+        prompts = ''
+        prompts += "Determine whether the following two sentences contain semantically opposite or different content, with a response of 1 indicating inclusion and 0 indicating non inclusion. "
+        prompts += f"The two sentences are: 1. {ori}, 2. {now}. Don't output any additional information."
+
+        output = ""
+        messages = self.prepare_chatgpt_message_judge(prompts)
+        reply, total_tokens = self.call_chatgpt(messages, max_tokens=77, model="gpt-3.5-turbo")
+
+        output += reply
+        output += "\n\n"
+
+        output = output[:-2]
+
+        # print(output)
+        return output
+    
+    def forward_judge(self, ori, now):
+        success = False
+        while not success:
+            judge_result = 0
+            try:
+                judge_result = self.generate_judge(ori, now)
+                judge_result = int(judge_result)
+            except Exception as e:
+                print(e, judge_result)
+                success = False
+            else:
+                success = True
+        return judge_result
 
 def tensor_to_base64(img_tensor):
     # 图像是 (C, H, W) RGB，转换为 (H, W, C)
