@@ -14,14 +14,14 @@ for eps in "${eps_values[@]}"; do
             coi_output_file="results/bench_attack_coi-opti-judge_eps${eps}_iter${iter}_query${query}/dolphin_output.json"
                     
             # 检查COI实验的输出文件是否存在
-            if [ ! -f "$coi_output_file" ]; then
+            # if [ ! -f "$coi_output_file" ]; then
                 echo "Running experiment COI-opti-judge with eps=$eps, iter=$iter query=$query"
                 python attack/dolphins_bench_attack_wlu_opti-judge.py --eps "$eps" --iter "$iter" --query "$query"    # >> output_eps_${eps}_iter_${iter}.log 2>&1
                 python tools/dolphin_evaluate.py --exp bench_attack_coi-opti-judge_eps${eps}_iter${iter}_query${query}
                 echo "Finished experiment COI-opti-judge with eps=$eps, iter=$iter"
-            else
-                echo "Skipping COI-opti-judge experiment with eps=$eps, iter=$iter as output already exists"
-            fi
+            # else
+            #     echo "Skipping COI-opti-judge experiment with eps=$eps, iter=$iter as output already exists"
+            # fi
 
         done
     done

@@ -2,8 +2,8 @@
 export CUDA_VISIBLE_DEVICES=4
 
 # 定义可变参数范围
-eps_values=(0.1 0.2 0.5 0.05)
-steps_values=(3 5 10 20 50 100)
+eps_values=(0.1 )
+steps_values=(5 10 20 50)
 
 # 定义固定参数
 dire="pos"

@@ -53,6 +53,8 @@ class GPTEvaluation:
     
     def forward(self, answer, GT) -> int:
         success = False
+        if answer == '':
+            return 0
         while not success:
             score = "error"
             try:

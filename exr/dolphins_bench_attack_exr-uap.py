@@ -184,26 +184,28 @@ def exr_attack(model, vision_x, input_ids_list, attention_mask_list, labels_list
     alpha = 2 * epsilon / steps
     optimizer = torch.optim.Adam([noise], lr=alpha)
     denormed_vision_x = denormalize(vision_x, image_mean, image_std)
-    for _ in range(steps):
-        noise.requires_grad = True
-        final_noise = torch.cat([noise] * vision_x.shape[2])
-        vision_x_noise = denormed_vision_x.half().cuda() + noise + final_noise.cuda()
-        vision_x_noise = normalize(vision_x_noise, image_mean, image_std)
-        if METHOD == 2:
-            idx = 0
-        else:
-            idx = random.randrange(0, version_num)   # random.randrange(start, stop)生成一个范围内的整数，但不包括stop
-        loss = model(
-            vision_x=vision_x_noise,
-            lang_x=input_ids_list[idx].cuda(),
-            attention_mask=attention_mask_list[idx].cuda(),
-            labels=labels_list[idx].cuda(),
-            media_locations=None
-        )[0]
-        noise.grad = None
-        loss.backward()
-        
-        noise = torch.clamp(noise.detach(), -epsilon, epsilon)
+    for e in range(EPOCH):
+        for b in range(vision_x.shape[2]):
+            for _ in range(steps):
+                noise.requires_grad = True
+                denormed_vision_x = denormed_vision_x.detach().clone()
+                denormed_vision_x[0, 0, b, :] = denormed_vision_x[0, 0, b, :] + noise
+                vision_x_noise = normalize(denormed_vision_x, image_mean, image_std).half().cuda()
+                if METHOD == 2:
+                    idx = 0
+                else:
+                    idx = random.randrange(0, version_num)   # random.randrange(start, stop)生成一个范围内的整数，但不包括stop
+                loss = model(
+                    vision_x=vision_x_noise,
+                    lang_x=input_ids_list[idx].cuda(),
+                    attention_mask=attention_mask_list[idx].cuda(),
+                    labels=labels_list[idx].cuda(),
+                    media_locations=None
+                )[0]
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()  
+                noise = torch.clamp(noise.detach(), -epsilon, epsilon)
     return noise.detach()
 
 image_mean = [0.48145466, 0.4578275, 0.40821073]
@@ -217,10 +219,11 @@ if __name__ == "__main__":
     parser.add_argument('--dire', type=str, default='pos', choices=['pos', 'neg'])
     parser.add_argument('--samples', type=int, default=10)
     parser.add_argument('--method', type=int,  choices=[2, 3, 4])
+    parser.add_argument('--epoch', type=int, default=5)
     args = parser.parse_args()
     model, image_processor, tokenizer = load_pretrained_modoel()
     device = model.device
-    model.attack = True
+    EPOCH = args.epoch
 
     generation_kwargs = {'max_new_tokens': 512, 'temperature': 1,
                                 'top_k': 0, 'top_p': 1, 'no_repeat_ngram_size': 3, 'length_penalty': 1,
@@ -228,7 +231,7 @@ if __name__ == "__main__":
                                 'early_stopping': True}
     METHOD = int(args.method)
     houzhui = '_multi_woori'
-    folder = f'results/bench_attack_m{METHOD}_white_{args.lp}_eps{args.eps}_steps{args.steps}_{args.dire}'
+    folder = f'results/bench_attack_m{METHOD}-uap_white_{args.lp}_eps{args.eps}_steps{args.steps}_epoch{EPOCH}_{args.dire}'
     os.makedirs(folder, exist_ok=True)
     json_file = os.path.join(folder, 'dolphin_output.json')
     bench_path, version_num = gen_multi_version(samples=args.samples, houzhui=houzhui)

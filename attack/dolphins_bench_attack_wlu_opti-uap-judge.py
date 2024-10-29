@@ -289,6 +289,10 @@ if __name__ == "__main__":
     gpt = GPT()
     gpt_eval = GPTEvaluation()
     induction_records = []
+    coi_records = os.path.join(folder, 'records.json')
+    if os.path.exists(coi_records):
+        with open(coi_records, 'r') as file:
+            induction_records = json.load(file)
 
     model, image_processor, tokenizer = load_pretrained_modoel()
     tokenizer.eos_token_id = 50277
@@ -352,6 +356,5 @@ if __name__ == "__main__":
                     "induction_answers": induction_answers,
                 })
     finally:
-        coi_records = os.path.join(folder, 'records.json')
         with open(coi_records, 'w') as file:
             json.dump(induction_records, file, indent=4)

@@ -1,3 +1,5 @@
+import sys
+sys.path.append(".")
 import json
 import csv
 import random
@@ -168,36 +170,28 @@ def denormalize(tensor, mean, std):
 
 
 def pgd_attack(model, vision_x, input_ids, attention_mask, labels=None, epsilon=0.001, steps=10, lp='linf', dire='pos'):
-    noise = torch.zeros_like(vision_x).to(device).half().cuda()
-    alpha = epsilon / steps
+    noise = torch.zeros_like(vision_x[0, 0, 0:1, :], requires_grad=True)
+    alpha = 2 * epsilon / steps
+    optimizer = torch.optim.Adam([noise], lr=alpha)
     denormed_vision_x = denormalize(vision_x, image_mean, image_std)
-    for _ in range(steps):
-        noise.requires_grad = True
-        vision_x_noise = denormed_vision_x.half().cuda() + noise
-        vision_x_noise = normalize(vision_x_noise, image_mean, image_std)
-        loss = model(
-            vision_x=vision_x_noise,
-            lang_x=input_ids.cuda(),
-            attention_mask=attention_mask.cuda(),
-            labels=labels.cuda(),
-            media_locations=None
-        )[0]
-        noise.grad = None
-        loss.backward()
-        grad = noise.grad.detach()
-        if lp == 'linf':
-            delta = grad.sign()
-        elif lp == 'l1':
-            delta = grad / torch.norm(grad, p=1)
-        elif lp == 'l2':
-            delta = grad / torch.norm(grad, p=2)
-        else:
-            raise ValueError('lp must be linf, l1 or l2')
-        if dire == 'neg':
-            noise = noise - alpha * delta
-        else:
-            noise = noise + alpha * delta
-        noise = noise.detach()
+    for e in range(EPOCH):
+        for b in range(vision_x.shape[2]):
+            for _ in range(steps):
+                noise.requires_grad = True
+                denormed_vision_x = denormed_vision_x.detach().clone()
+                denormed_vision_x[0, 0, b, :] = denormed_vision_x[0, 0, b, :] + noise
+                vision_x_noise = normalize(denormed_vision_x, image_mean, image_std).half().cuda()
+                loss = model(
+                    vision_x=vision_x_noise,
+                    lang_x=input_ids.cuda(),
+                    attention_mask=attention_mask.cuda(),
+                    labels=labels.cuda(),
+                    media_locations=None
+                )[0]
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()  
+                noise = torch.clamp(noise.detach(), -epsilon, epsilon)
     return noise.detach()
 
 image_mean = [0.48145466, 0.4578275, 0.40821073]
@@ -209,16 +203,17 @@ if __name__ == "__main__":
     parser.add_argument('--steps', type=int, default=10)
     parser.add_argument('--lp', type=str, default='linf', choices=['l1', 'l2', 'linf'])
     parser.add_argument('--dire', type=str, default='pos', choices=['pos', 'neg'])
+    parser.add_argument('--epoch', type=int, default=5)
     args = parser.parse_args()
     model, image_processor, tokenizer = load_pretrained_modoel()
     device = model.device
-    model.attack = True
+    EPOCH = args.epoch
 
     generation_kwargs = {'max_new_tokens': 512, 'temperature': 1,
                                 'top_k': 0, 'top_p': 1, 'no_repeat_ngram_size': 3, 'length_penalty': 1,
                                 'do_sample': False,
                                 'early_stopping': True}
-    folder = f'results/bench_attack_pgd_white_{args.lp}_eps{args.eps}_steps{args.steps}_{args.dire}'
+    folder = f'results/bench_attack_pgd-uap_white_{args.lp}_eps{args.eps}_steps{args.steps}_epoch{EPOCH}_{args.dire}'
     os.makedirs(folder, exist_ok=True)
     json_file = os.path.join(folder, 'dolphin_output.json')
     with open('playground/dolphins_bench/dolphins_benchmark.json', 'r') as file:
