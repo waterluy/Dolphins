@@ -11,7 +11,7 @@ for eps in "${eps_values[@]}"; do
     for iter in "${iter_values[@]}"; do
         for query in "${query_values[@]}"; do
             # 定义输出文件路径
-            coi_output_file="results/bench_attack_coi-opti-uap-judge_eps${eps}_iter${iter}_query${query}/dolphin_output.json"
+            coi_output_file="results/bench_attack_coi-opti-uap-judge_eps${eps}_iter${iter}_query${query}/bench_score.csv"
                     
             # 检查COI实验的输出文件是否存在
             # if [ ! -f "$coi_output_file" ]; then

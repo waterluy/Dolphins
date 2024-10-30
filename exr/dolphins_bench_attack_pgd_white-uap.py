@@ -250,7 +250,7 @@ if __name__ == "__main__":
             # inference
             inputs = get_model_inputs_prompts(instruction=instruction, model=model, tokenizer=tokenizer)
             generated_tokens = model.generate(
-                vision_x=images.half().cuda() + noise,
+                vision_x=images.half().cuda() + noise.cuda(),
                 lang_x=inputs["input_ids"].cuda(),
                 attention_mask=inputs["attention_mask"].cuda(),
                 num_beams=3,

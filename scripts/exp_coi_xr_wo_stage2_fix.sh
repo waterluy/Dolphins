@@ -13,7 +13,7 @@ for eps in "${eps_values[@]}"; do
             # without stage2(chain1) fix
             # 定义输出文件路径
             result=$((iter * query))
-            coi_output_file="results/bench_attack_coi-wo-stage2-fix1_eps${eps}_iter${result}/dolphin_output.json"
+            coi_output_file="results/bench_attack_coi-wo-stage2-fix1_eps${eps}_iter${result}/bench_score.csv"
                     
             # 检查COI实验的输出文件是否存在
             if [ ! -f "$coi_output_file" ]; then

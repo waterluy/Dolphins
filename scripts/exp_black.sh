@@ -12,7 +12,7 @@ for transfer in "${transfer_values[@]}"; do
     for eps in "${eps_values[@]}"; do
         # fgsm
         # 定义输出文件路径
-        fgsm_output_file="results/bench_attack_black_${transfer}_fgsm_eps${eps}/dolphin_output.json"
+        fgsm_output_file="results/bench_attack_black_${transfer}_fgsm_eps${eps}/bench_score.csv"
         
         # 检查FGSM实验的输出文件是否存在
         if [ ! -f "$fgsm_output_file" ]; then
