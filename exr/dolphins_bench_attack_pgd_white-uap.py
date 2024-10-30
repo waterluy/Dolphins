@@ -34,6 +34,7 @@ from peft import (
     PeftConfig,
     PeftModel
 )
+from tqdm import tqdm
 
 def setup_seed(seed):
     torch.manual_seed(seed)
@@ -174,25 +175,26 @@ def pgd_attack(model, vision_x, input_ids, attention_mask, labels=None, epsilon=
     alpha = 2 * epsilon / steps
     optimizer = torch.optim.Adam([noise], lr=alpha)
     denormed_vision_x = denormalize(vision_x, image_mean, image_std)
-    for e in range(EPOCH):
-        for b in range(vision_x.shape[2]):
-            for _ in range(steps):
-                noise.requires_grad = True
-                denormed_vision_x = denormed_vision_x.detach().clone()
-                denormed_vision_x[0, 0, b, :] = denormed_vision_x[0, 0, b, :] + noise
-                vision_x_noise = normalize(denormed_vision_x, image_mean, image_std).half().cuda()
-                loss = model(
-                    vision_x=vision_x_noise,
-                    lang_x=input_ids.cuda(),
-                    attention_mask=attention_mask.cuda(),
-                    labels=labels.cuda(),
-                    media_locations=None
-                )[0]
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()  
-                noise = torch.clamp(noise.detach(), -epsilon, epsilon)
-    return noise.detach()
+    for e in range(steps):
+        for _ in range(vision_x.shape[2]):
+            b = 0
+            # for _ in range(steps):
+            noise.requires_grad = True
+            denormed_vision_x = denormed_vision_x.detach().clone()
+            denormed_vision_x[0, 0, b, :] = denormed_vision_x[0, 0, b, :] + noise
+            vision_x_noise = normalize(denormed_vision_x, image_mean, image_std).half().cuda()
+            loss = model(
+                vision_x=vision_x_noise,
+                lang_x=input_ids.cuda(),
+                attention_mask=attention_mask.cuda(),
+                labels=labels.cuda(),
+                media_locations=None
+            )[0]
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()  
+            noise = torch.clamp(noise.detach(), -epsilon, epsilon)
+    return torch.cat([noise.detach()] * vision_x.shape[2])
 
 image_mean = [0.48145466, 0.4578275, 0.40821073]
 image_std = [0.26862954, 0.26130258, 0.27577711]
@@ -203,22 +205,26 @@ if __name__ == "__main__":
     parser.add_argument('--steps', type=int, default=10)
     parser.add_argument('--lp', type=str, default='linf', choices=['l1', 'l2', 'linf'])
     parser.add_argument('--dire', type=str, default='pos', choices=['pos', 'neg'])
-    parser.add_argument('--epoch', type=int, default=5)
+    # parser.add_argument('--epoch', type=int, default=5)
     args = parser.parse_args()
     model, image_processor, tokenizer = load_pretrained_modoel()
     device = model.device
-    EPOCH = args.epoch
+    # EPOCH = args.epoch
 
     generation_kwargs = {'max_new_tokens': 512, 'temperature': 1,
                                 'top_k': 0, 'top_p': 1, 'no_repeat_ngram_size': 3, 'length_penalty': 1,
                                 'do_sample': False,
                                 'early_stopping': True}
-    folder = f'results/bench_attack_pgd-uap_white_{args.lp}_eps{args.eps}_steps{args.steps}_epoch{EPOCH}_{args.dire}'
+    ok_unique_id = []
+    folder = f'results/bench_attack_pgd-uap_white_{args.lp}_eps{args.eps}_steps{args.steps}_{args.dire}'
     os.makedirs(folder, exist_ok=True)
     json_file = os.path.join(folder, 'dolphin_output.json')
+    if os.path.exists(json_file):
+        with open(json_file, 'r') as file:
+            for line in file:
+                ok_unique_id.append(json.loads(line)['unique_id'])
     with open('playground/dolphins_bench/dolphins_benchmark.json', 'r') as file:
         data = json.load(file)
-    # random.shuffle(data)
 
     with open(json_file, 'w') as file:
         # 遍历JSON数据
@@ -235,7 +241,7 @@ if __name__ == "__main__":
                     instruction = conversation['value']
                 elif conversation['from'] == 'gpt':
                     ground_truth = conversation['value']
-            if instruction == '':
+            if unique_id in ok_unique_id:
                 continue
 
             tokenizer.eos_token_id = 50277

@@ -35,6 +35,7 @@ from peft import (
     PeftModel
 )
 from tools.gpt_gen_multq import gen_multi_version
+from tqdm import tqdm
 
 def setup_seed(seed):
     torch.manual_seed(seed)
@@ -184,9 +185,9 @@ def exr_attack(model, vision_x, input_ids_list, attention_mask_list, labels_list
     alpha = 2 * epsilon / steps
     optimizer = torch.optim.Adam([noise], lr=alpha)
     denormed_vision_x = denormalize(vision_x, image_mean, image_std)
-    for e in range(EPOCH):
+    for e in range(steps):
         for b in range(vision_x.shape[2]):
-            for _ in range(steps):
+            # for _ in range(steps):
                 noise.requires_grad = True
                 denormed_vision_x = denormed_vision_x.detach().clone()
                 denormed_vision_x[0, 0, b, :] = denormed_vision_x[0, 0, b, :] + noise
@@ -206,7 +207,7 @@ def exr_attack(model, vision_x, input_ids_list, attention_mask_list, labels_list
                 loss.backward()
                 optimizer.step()  
                 noise = torch.clamp(noise.detach(), -epsilon, epsilon)
-    return noise.detach()
+    return torch.cat([noise.detach()] * vision_x.shape[2])
 
 image_mean = [0.48145466, 0.4578275, 0.40821073]
 image_std = [0.26862954, 0.26130258, 0.27577711]
@@ -218,12 +219,12 @@ if __name__ == "__main__":
     parser.add_argument('--lp', type=str, default='linf', choices=['l1', 'l2', 'linf'])
     parser.add_argument('--dire', type=str, default='pos', choices=['pos', 'neg'])
     parser.add_argument('--samples', type=int, default=10)
-    parser.add_argument('--method', type=int,  choices=[2, 3, 4])
-    parser.add_argument('--epoch', type=int, default=5)
+    parser.add_argument('--method', type=int, default=2, choices=[2, 3, 4])
+    # parser.add_argument('--epoch', type=int, default=5)
     args = parser.parse_args()
     model, image_processor, tokenizer = load_pretrained_modoel()
     device = model.device
-    EPOCH = args.epoch
+    # EPOCH = args.epoch
 
     generation_kwargs = {'max_new_tokens': 512, 'temperature': 1,
                                 'top_k': 0, 'top_p': 1, 'no_repeat_ngram_size': 3, 'length_penalty': 1,
@@ -231,16 +232,21 @@ if __name__ == "__main__":
                                 'early_stopping': True}
     METHOD = int(args.method)
     houzhui = '_multi_woori'
-    folder = f'results/bench_attack_m{METHOD}-uap_white_{args.lp}_eps{args.eps}_steps{args.steps}_epoch{EPOCH}_{args.dire}'
+    ok_unique_id = []
+    folder = f'results/bench_attack_m{METHOD}-uap_white_{args.lp}_eps{args.eps}_steps{args.steps}_{args.dire}'
     os.makedirs(folder, exist_ok=True)
     json_file = os.path.join(folder, 'dolphin_output.json')
+    if os.path.exists(json_file):
+        with open(json_file, 'r') as file:
+            for line in file:
+                ok_unique_id.append(json.loads(line)['unique_id'])
     bench_path, version_num = gen_multi_version(samples=args.samples, houzhui=houzhui)
     with open(bench_path, 'r') as file:
         data = json.load(file)
 
     with open(json_file, 'w') as file:
         # 遍历JSON数据
-        for entry in data:
+        for entry in tqdm(data):
             instruction = ''
             ground_truth = ''
             unique_id = entry["id"]
@@ -255,7 +261,7 @@ if __name__ == "__main__":
                     multi_version_instructions = conversation['value']['multi_version']
                 elif conversation['from'] == 'gpt':
                     ground_truth = conversation['value']
-            if instruction == '':
+            if unique_id in ok_unique_id:
                 continue
 
             tokenizer.eos_token_id = 50277

@@ -24,8 +24,7 @@ def main():
     steps_values = [3, 5, 10, 20, 50, 100]
     dire = "pos"
     lp = "linf"
-    attack_methods = ["pgd", "m2", "m3", "m4"]
-    # attack_methods = ["exr", "pgd"]
+    attack_methods = ["pgd", "m2", "m3", "m4", "pgd-uap", "m2-uap","m3-uap", "m4-uap"]
 
     # 输出文件路径
     output_file = 'results/exr1022.csv'
