@@ -3,7 +3,7 @@ export CUDA_VISIBLE_DEVICES=6
 
 # 定义可变参数范围
 eps_values=(0.1 )
-steps_values=(5 10 20 50)
+steps_values=(5 10 )
 # steps_values=(1 2 4 10)
 method_values=(2 3 4)
 
@@ -20,7 +20,7 @@ for eps in "${eps_values[@]}"; do
             exr_score_file="results/bench_attack_m${method}-uap_white_${lp}_eps${eps}_steps${steps}_${dire}/bench_score.csv"
             
             # 检查EXR实验的输出文件是否存在
-            if [ ! -f "$exr_output_file" ]; then
+            if [ ! -f "$exr_score_file" ]; then
                 echo "Running experiment m${method}-uap with eps=$eps, steps=$steps, dire=$dire, lp=$lp"
                 python exr/dolphins_bench_attack_exr-uap.py --eps "$eps" --steps "$steps" --method $method --dire "$dire" --lp "$lp" # >> output_eps_${eps}_steps_${steps}.log 2>&1
             fi

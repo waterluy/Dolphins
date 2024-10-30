@@ -292,13 +292,14 @@ if __name__ == "__main__":
             generated_text = tokenizer.batch_decode(generated_tokens)
             last_answer_index = generated_text[0].rfind("<answer>")
             content_after_last_answer = generated_text[0][last_answer_index + len("<answer>"):]
+            final_answer = content_after_last_answer[:content_after_last_answer.rfind("<|endofchunk|>")]
             
             # 写入json行数据
             file.write(
                 json.dumps({
                     "unique_id": unique_id,
                     "task_name": task_name,
-                    "pred": content_after_last_answer,
+                    "pred": final_answer,
                     "gt": ground_truth,
                     "label": label
                 }) + "\n"

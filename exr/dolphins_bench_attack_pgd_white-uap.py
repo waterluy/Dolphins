@@ -256,7 +256,7 @@ if __name__ == "__main__":
             # inference
             inputs = get_model_inputs_prompts(instruction=instruction, model=model, tokenizer=tokenizer)
             generated_tokens = model.generate(
-                vision_x=images.half().cuda() + noise.cuda(),
+                vision_x=images.half().cuda() + noise.half().cuda(),
                 lang_x=inputs["input_ids"].cuda(),
                 attention_mask=inputs["attention_mask"].cuda(),
                 num_beams=3,
@@ -270,15 +270,16 @@ if __name__ == "__main__":
             generated_text = tokenizer.batch_decode(generated_tokens)
             last_answer_index = generated_text[0].rfind("<answer>")
             content_after_last_answer = generated_text[0][last_answer_index + len("<answer>"):]
+            final_answer = content_after_last_answer[:content_after_last_answer.rfind("<|endofchunk|>")]
             
-            print(f"\n{video_path}\n")
-            print(f"\n\ninstruction: {instruction}\ndolphins answer: {content_after_last_answer}\n\n")
+            # print(f"\n{video_path}\n")
+            # print(f"\n\ninstruction: {instruction}\ndolphins answer: {content_after_last_answer}\n\n")
             # 写入json行数据
             file.write(
                 json.dumps({
                     "unique_id": unique_id,
                     "task_name": task_name,
-                    "pred": content_after_last_answer,
+                    "pred": final_answer,
                     "gt": ground_truth,
                     "label": label
                 }) + "\n"
