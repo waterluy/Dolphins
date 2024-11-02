@@ -185,7 +185,7 @@ def exr_attack(model, vision_x, input_ids_list, attention_mask_list, labels_list
     alpha = 2 * epsilon / steps
     vision_x_noise = denormalize(vision_x, image_mean, image_std)
     if args.affine:
-        vision_x_noise = transforms.RandomAffine(degrees=(-0.05, 0.05), translate=(0.001, 0.002), scale=(0.999, 1.001), shear=(0.01))(vision_x_noise)
+        vision_x_noise = transforms.RandomAffine(degrees=(-0.05, 0.05), translate=(0.001, 0.002), scale=(0.999, 1.001), shear=(0.01))(vision_x_noise.squeeze()).unsqueeze(0).unsqueeze(0)
     for _ in range(steps):
         noise.requires_grad = True
         vision_x_noise = vision_x_noise.half().cuda() + noise
