@@ -162,16 +162,6 @@ def get_model_inputs_images(video_path, image_processor,):
     # print(vision_x.shape)   # torch.Size([1, 1, 16, 3, 336, 336])
     return vision_x
 
-def get_model_inputs_images_affine(video_path, image_processor,):
-    frames = get_image(video_path)
-    vision_x = torch.stack([image_processor(image) for image in frames], dim=0).unsqueeze(0).unsqueeze(0)
-    vision_x = denormalize(vision_x, image_mean, std=image_std)
-    vision_x = transforms.RandomAffine(degrees=(-0.05, 0.05), translate=(0.001, 0.002), scale=(0.999, 1.001), shear=(0.01))(vision_x)
-    vision_x = normalize(vision_x, image_mean, std=image_std)
-    assert vision_x.shape[2] == len(frames)
-    # print(vision_x.shape)   # torch.Size([1, 1, 16, 3, 336, 336])
-    return vision_x
-
 def get_model_inputs_prompts(instruction, model, tokenizer):
     prompt = [
         f"USER: <image> is a driving video. {instruction} GPT:<answer>"
@@ -284,34 +274,22 @@ if __name__ == "__main__":
             tokenizer.eos_token_id = 50277
             tokenizer.pad_token_id = 50277
 
-            if METHOD != 0:
-                images = get_model_inputs_images(video_path=video_path, image_processor=image_processor)
-                if METHOD == 3:
-                    multi_version_instructions.append(instruction)
-                input_ids_list, attention_mask_list, labels_list = get_model_inputs_prompts_for_loss(instructions=multi_version_instructions, target=ground_truth, model=model, tokenizer=tokenizer)
+            images = get_model_inputs_images(video_path=video_path, image_processor=image_processor)
+            if METHOD == 3:
+                multi_version_instructions.append(instruction)
+            input_ids_list, attention_mask_list, labels_list = get_model_inputs_prompts_for_loss(instructions=multi_version_instructions, target=ground_truth, model=model, tokenizer=tokenizer)
 
-                noise = exr_attack(model=model, vision_x=images, input_ids_list=input_ids_list, attention_mask_list=attention_mask_list, labels_list=labels_list, epsilon=args.eps, steps=args.steps, lp=args.lp, dire=args.dire)
-                
-                # inference
-                inputs = get_model_inputs_prompts(instruction=instruction, model=model, tokenizer=tokenizer)
-                generated_tokens = model.generate(
-                    vision_x=images.half().cuda() + noise,
-                    lang_x=inputs["input_ids"].cuda(),
-                    attention_mask=inputs["attention_mask"].cuda(),
-                    num_beams=3,
-                    **generation_kwargs,
-                )
-            else:
-                images_affine = get_model_inputs_images_affine(video_path=video_path, image_processor=image_processor)
-                # affine inference
-                inputs = get_model_inputs_prompts(instruction=instruction, model=model, tokenizer=tokenizer)
-                generated_tokens = model.generate(
-                    vision_x=images_affine.half().cuda(),
-                    lang_x=inputs["input_ids"].cuda(),
-                    attention_mask=inputs["attention_mask"].cuda(),
-                    num_beams=3,
-                    **generation_kwargs,
-                )
+            noise = exr_attack(model=model, vision_x=images, input_ids_list=input_ids_list, attention_mask_list=attention_mask_list, labels_list=labels_list, epsilon=args.eps, steps=args.steps, lp=args.lp, dire=args.dire)
+            
+            # inference
+            inputs = get_model_inputs_prompts(instruction=instruction, model=model, tokenizer=tokenizer)
+            generated_tokens = model.generate(
+                vision_x=images.half().cuda() + noise,
+                lang_x=inputs["input_ids"].cuda(),
+                attention_mask=inputs["attention_mask"].cuda(),
+                num_beams=3,
+                **generation_kwargs,
+            )
 
             generated_tokens = generated_tokens.cpu().numpy()
             if isinstance(generated_tokens, tuple):

@@ -4,12 +4,12 @@ export CUDA_VISIBLE_DEVICES=1
 # 定义可变参数范围
 eps=0.1
 steps=50
-method=0
+method=2
 
 # 定义固定参数
 dire="pos"
 lp="linf"
-samples=0
+samples=1
 output="exr-b"
 affine=True
 

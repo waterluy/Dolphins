@@ -29,7 +29,7 @@ fi
 
 affine=False
 method=2
-samples=0
+samples=1
 pgd_output_file="${output}/bench_attack_m${method}-${affine}_white_${lp}_eps${eps}_steps${steps}_samples${samples}_${dire}/dolphin_output.json"
 
 # 检查PGD-m2实验的输出文件是否存在
