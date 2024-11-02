@@ -125,7 +125,9 @@ def get_model_inputs(video_path, instruction, model, image_processor, tokenizer)
     return vision_x, inputs
 
 if __name__ == "__main__":
-
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--output', type=str, default='./results')
+    args = parser.parse_args()
     model, image_processor, tokenizer = load_pretrained_modoel()
     generation_kwargs = {'max_new_tokens': 512, 'temperature': 1,
                                 'top_k': 0, 'top_p': 1, 'no_repeat_ngram_size': 3, 'length_penalty': 1,
@@ -134,11 +136,11 @@ if __name__ == "__main__":
 
     with open('playground/dolphins_bench/dolphins_benchmark.json', 'r') as file:
         data = json.load(file)
-    folder = 'results/dolphins_benchmark_inference'
+    folder = f'{args.output}/bench_inference'
     os.makedirs(folder, exist_ok=True)
     with open(os.path.join(folder, 'dolphin_output.json'), 'w') as file:
         # 遍历JSON数据
-        for entry in data:
+        for entry in tqdm(data):
             instruction = ''
             ground_truth = ''
             unique_id = entry["id"]
@@ -174,9 +176,7 @@ if __name__ == "__main__":
             generated_text = tokenizer.batch_decode(generated_tokens)
             last_answer_index = generated_text[0].rfind("<answer>")
             content_after_last_answer = generated_text[0][last_answer_index + len("<answer>"):]
-            print(f"\n{video_path}\n")
-            print(f"\n\ninstruction: {instruction}\ndolphins answer: {content_after_last_answer}\n\n")
-
+            
             # 写入json行数据
             file.write(
                 json.dumps({

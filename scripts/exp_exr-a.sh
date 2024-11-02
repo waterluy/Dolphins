@@ -21,8 +21,7 @@ exr_output_file="${output}/bench_attack_m${method}-${affine}_white_${lp}_eps${ep
 if [ ! -f "$exr_output_file" ]; then
     echo "python exr/dolphins_bench_attack_exr.py --samples $samples --method $method --output $output --eps "$eps" --steps "$steps" --dire "$dire" --lp "$lp""
     python exr/dolphins_bench_attack_exr.py --samples $samples --method $method --output $output --eps "$eps" --steps "$steps" --dire "$dire" --lp "$lp" # >> output_eps_${eps}_steps_${steps}.log 2>&1
-    exp=$(echo "$exr_output_file" | cut -d'/' -f2)
-    python tools/dolphin_evaluate.py --exp $exp
+    python tools/dolphin_evaluate.py --exp $exr_output_file
 else
     echo "Skipping EXR experiment with eps=$eps, steps=$steps as output already exists"
 fi

@@ -156,10 +156,8 @@ if __name__ == '__main__':
     parser.add_argument('--exp', type=str, default=None)
     args = parser.parse_args()
     benchmark_file = "./playground/dolphins_bench/dolphins_benchmark.json"
-    # result_file = "results/dolphins_benchmark_attack_online_gpt_target_0.json"
-    # result_file = 'playground/dolphins_bench/results/dolphins/dolphins_results.json'
     chatgpt_score_file = "playground/dolphins_bench/results/dolphins/dolphins_scores.json"
-    result_file =  os.path.join('results', args.exp, 'dolphin_output.json')
+    result_file =  args.exp
     
     task_num = defaultdict(lambda: 0)
     task_scores = defaultdict(list)
@@ -295,7 +293,7 @@ if __name__ == '__main__':
         score_sum += weighted_average
         task_num += 1
 
-    csv_path = os.path.join('results', args.exp, 'bench_score.csv')
+    csv_path = result_file.replace('dolphin_output.json', 'bench_score.csv')
     with open(csv_path, 'w', newline='') as csv_file:
         writer = csv.DictWriter(csv_file, fieldnames=csv_headers)
         writer.writeheader()
