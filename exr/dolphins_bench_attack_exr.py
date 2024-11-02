@@ -35,6 +35,7 @@ from peft import (
     PeftModel
 )
 from tools.gpt_gen_multq import gen_multi_version
+import torchvision.transforms as transforms
 
 def setup_seed(seed):
     torch.manual_seed(seed)
@@ -182,15 +183,19 @@ def denormalize(tensor, mean, std):
 def exr_attack(model, vision_x, input_ids_list, attention_mask_list, labels_list=None, epsilon=0.001, steps=10, lp='linf', dire='pos'):
     noise = torch.zeros_like(vision_x).to(device).half().cuda()
     alpha = 2 * epsilon / steps
-    denormed_vision_x = denormalize(vision_x, image_mean, image_std)
+    vision_x_noise = denormalize(vision_x, image_mean, image_std)
+    if args.affine:
+        vision_x_noise = transforms.RandomAffine(degrees=(-0.05, 0.05), translate=(0.001, 0.002), scale=(0.999, 1.001), shear=(0.01))(vision_x_noise)
     for _ in range(steps):
         noise.requires_grad = True
-        vision_x_noise = denormed_vision_x.half().cuda() + noise
+        vision_x_noise = vision_x_noise.half().cuda() + noise
         vision_x_noise = normalize(vision_x_noise, image_mean, image_std)
         if METHOD == 2:
             idx = 0
+        elif METHOD == 0:
+            idx = -1
         else:
-            idx = random.randrange(0, version_num)   # random.randrange(start, stop)生成一个范围内的整数，但不包括stop
+            idx = random.randrange(0, samples)   # random.randrange(start, stop)生成一个范围内的整数，但不包括stop
         loss = model(
             vision_x=vision_x_noise,
             lang_x=input_ids_list[idx].cuda(),
@@ -226,7 +231,9 @@ if __name__ == "__main__":
     parser.add_argument('--lp', type=str, default='linf', choices=['l1', 'l2', 'linf'])
     parser.add_argument('--dire', type=str, default='pos', choices=['pos', 'neg'])
     parser.add_argument('--samples', type=int, default=10)
-    parser.add_argument('--method', type=int,  choices=[2, 3, 4])
+    parser.add_argument('--method', type=int,  choices=[0, 2, 3, 4])
+    parser.add_argument('--affine', action='store_true')
+    parser.add_argument('--output', type=str, default='./results')
     args = parser.parse_args()
     model, image_processor, tokenizer = load_pretrained_modoel()
     device = model.device
@@ -238,16 +245,17 @@ if __name__ == "__main__":
                                 'early_stopping': True}
     METHOD = int(args.method)
     houzhui = '_multi_woori'
-    folder = f'results/bench_attack_m{METHOD}_white_{args.lp}_eps{args.eps}_steps{args.steps}_{args.dire}'
+    folder = f'{args.output}/bench_attack_m{METHOD}-{args.affine}_white_{args.lp}_eps{args.eps}_steps{args.steps}_samples{args.samples}_{args.dire}'
     os.makedirs(folder, exist_ok=True)
     json_file = os.path.join(folder, 'dolphin_output.json')
     bench_path, version_num = gen_multi_version(samples=args.samples, houzhui=houzhui)
+    samples = args.samples
     with open(bench_path, 'r') as file:
         data = json.load(file)
 
     with open(json_file, 'w') as file:
         # 遍历JSON数据
-        for entry in data:
+        for entry in tqdm(data):
             instruction = ''
             ground_truth = ''
             unique_id = entry["id"]

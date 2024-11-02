@@ -211,6 +211,7 @@ if __name__ == "__main__":
     parser.add_argument('--steps', type=int, default=10)
     parser.add_argument('--lp', type=str, default='linf', choices=['l1', 'l2', 'linf'])
     parser.add_argument('--dire', type=str, default='pos', choices=['pos', 'neg'])
+    parser.add_argument('--output', type=str, default='./results')
     args = parser.parse_args()
     model, image_processor, tokenizer = load_pretrained_modoel()
     device = model.device
@@ -220,7 +221,7 @@ if __name__ == "__main__":
                                 'top_k': 0, 'top_p': 1, 'no_repeat_ngram_size': 3, 'length_penalty': 1,
                                 'do_sample': False,
                                 'early_stopping': True}
-    folder = f'results/bench_attack_pgd_white_{args.lp}_eps{args.eps}_steps{args.steps}_{args.dire}'
+    folder = f'{args.output}/bench_attack_pgd_white_{args.lp}_eps{args.eps}_steps{args.steps}_{args.dire}'
     os.makedirs(folder, exist_ok=True)
     json_file = os.path.join(folder, 'dolphin_output.json')
     with open('playground/dolphins_bench/dolphins_benchmark.json', 'r') as file:
@@ -229,7 +230,7 @@ if __name__ == "__main__":
 
     with open(json_file, 'w') as file:
         # 遍历JSON数据
-        for entry in data:
+        for entry in tqdm(data):
             instruction = ''
             ground_truth = ''
             unique_id = entry["id"]
