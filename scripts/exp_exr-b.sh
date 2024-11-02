@@ -9,7 +9,7 @@ method=0
 # 定义固定参数
 dire="pos"
 lp="linf"
-samples=3
+samples=0
 output="exr-b"
 affine=True
 
