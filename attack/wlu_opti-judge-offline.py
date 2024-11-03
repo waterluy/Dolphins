@@ -222,11 +222,8 @@ def coi_attack_stage1(
             inputs=ori_inputs
         )
         answers.append(final_answer)
-        if ori_answer is None:
-            ori_answer = final_answer
-        else:
-            if final_answer == "":
-                break
+        if final_answer == "":
+            break
     return noise.detach(), answers
 
 
@@ -263,13 +260,13 @@ if __name__ == "__main__":
     EPS = args.eps
     ITER = args.iter
     QUERY = args.query
-    best_records_path = 'results/bench_attack_coi-opti-judge-offline_eps0.2_iter20_query8/records.json'
+    best_records_path = 'results/bench_attack_coi-opti-judge_eps0.2_iter20_query8/records.json'
     best_records = []
     with open(best_records_path, 'r') as file:
         best_records = json.load(file)
 
     ok_unique_id = []
-    folder = f'results/bench_attack_coi-opti-judge_eps{EPS}_iter{ITER}_query{QUERY}'
+    folder = f'results/bench_attack_coi-opti-judge-offline_eps{EPS}_iter{ITER}_query{QUERY}'
     os.makedirs(folder, exist_ok=True)
     json_path = os.path.join(folder, 'dolphin_output.json')
     if os.path.exists(json_path):
