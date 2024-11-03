@@ -5,7 +5,7 @@ captions_BDDX_clean.json
 results
 # playground/dolphins_bench
 csvfiles/
-mllm/otter/__pycache__/*
+mllm/otter/__pycache__/__init__.cpython-38.pyc
 t
 tmp*
 vis/*
@@ -14,3 +14,4 @@ grad_cam_images11/*
 cache/
 black/*
 tools/api.json
+exr-*

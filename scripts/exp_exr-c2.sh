@@ -2,7 +2,7 @@
 export CUDA_VISIBLE_DEVICES=3
 
 # 定义可变参数范围
-eps=0.01
+eps=0.1
 method=4
 steps_values=(3 5 10 20 50 100)
 
