@@ -170,7 +170,7 @@ def coi_attack_stage2(
         optimizer,
         ori_vision_x,
 ):    
-    texts = [induction_text for _ in range(ori_vision_x.shape[2])]
+    texts = [induction_text]
     resize_to_224 = transforms.Resize((224, 224))
 
     for _ in range(ITER):   # epoch   bs=ori_vision_x.shape[2]
@@ -180,9 +180,11 @@ def coi_attack_stage2(
             noise_start.requires_grad = True
             text_features = model_clip.encode_text(clip.tokenize(texts).cuda())
             # print(text_features.shape)  # torch.Size([16, 512])
-            denormed_vision_x = denormalize(ori_vision_x, mean=image_mean, std=image_std)[0, 0, :]
-            noisy_vision_x = denormed_vision_x
-            noisy_vision_x[:, :, b, :] = noisy_vision_x.cuda()[:, :, b, :] + noise_start.cuda()
+            denormed_vision_x = denormalize(ori_vision_x, mean=image_mean, std=image_std)[0, 0, b:b+1]
+            # print(denormed_vision_x.shape)  # torch.Size([1, 3, 336, 336])
+            # print(noise_start.shape)    # torch.Size([1, 3, 336, 336])
+            noisy_vision_x = denormed_vision_x.cuda()
+            noisy_vision_x = noisy_vision_x + noise_start.cuda()
             # print(noisy_vision_x.shape) # torch.Size([16, 3, 336, 336])
             normed_noisy_vision_x = normalize(noisy_vision_x, mean=image_mean, std=image_std)
             image_features = model_clip.encode_image(resize_to_224(normed_noisy_vision_x))
@@ -332,6 +334,8 @@ if __name__ == "__main__":
                 now_dict = list(filter(lambda x: x["unique_id"] == unique_id, best_records))
                 assert len(now_dict) == 1
                 induction_texts = now_dict[0]["induction_records"]
+                if QUERY < len(induction_texts):
+                    induction_texts = induction_texts[:QUERY]
                 
                 noise, induction_answers = coi_attack_stage1(ori_vision_x=vision_x, ori_inputs=inputs, texts=induction_texts)
 

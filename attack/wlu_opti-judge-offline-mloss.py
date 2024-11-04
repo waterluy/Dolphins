@@ -325,6 +325,8 @@ if __name__ == "__main__":
                 now_dict = list(filter(lambda x: x["unique_id"] == unique_id, best_records))
                 assert len(now_dict) == 1
                 induction_texts = now_dict[0]["induction_records"]
+                if QUERY < len(induction_texts):
+                    induction_texts = induction_texts[:QUERY]
                 
                 noise, induction_answers = coi_attack_stage1(ori_vision_x=vision_x, ori_inputs=inputs, texts=induction_texts)
 
