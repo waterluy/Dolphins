@@ -202,6 +202,7 @@ def coi_attack_stage2(
             # 对 dim 维度求和，得到每个样本的 KL 散度，形状为 [batch_size]
             kl_divergence_per_sample = kl_divergence.sum(dim=-1)
             total_loss = kl_divergence_per_sample.mean()
+            # KL 散度越大 表示两个分布的差异越大
         else:
             raise ValueError("Invalid loss type: {}".format(LOSS))
         optimizer.zero_grad()
@@ -221,7 +222,6 @@ def coi_attack_stage1(
     
     alpha = 2 * EPS / ITER
     optimizer = torch.optim.Adam([noise], lr=alpha)
-    ori_answer = None
     for induction_text in texts:
         noise = coi_attack_stage2(
             induction_text, 
@@ -274,7 +274,7 @@ if __name__ == "__main__":
     ITER = args.iter
     QUERY = args.query
     LOSS = args.loss
-    best_records_path = 'results/bench_attack_coi-opti-judge_eps0.2_iter20_query8/records.json'
+    best_records_path = 'results/bench_attack_coi-opti_eps0.2_iter20_query8/records.json'
     best_records = []
     with open(best_records_path, 'r') as file:
         best_records = json.load(file)

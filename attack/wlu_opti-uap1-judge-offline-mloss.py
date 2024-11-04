@@ -37,8 +37,8 @@ import clip
 import torch.nn.functional as F
 from torchvision import transforms
 from tools.gpt_coi import GPT
-from tools.gpt_eval import GPTEvaluation
 from tqdm import tqdm
+from tools.gpt_eval import GPTEvaluation
 
 def setup_seed(seed):
     torch.manual_seed(seed)
@@ -173,13 +173,13 @@ def coi_attack_stage2(
     texts = [induction_text for _ in range(ori_vision_x.shape[2])]
     resize_to_224 = transforms.Resize((224, 224))
 
-    for _ in range(ITER):
+    for _ in range(ITER * ori_vision_x.shape[2]):   # epoch   bs=ori_vision_x.shape[2]
         total_loss = 0
         noise_start.requires_grad = True
         text_features = model_clip.encode_text(clip.tokenize(texts).cuda())
         # print(text_features.shape)  # torch.Size([16, 512])
         denormed_vision_x = denormalize(ori_vision_x, mean=image_mean, std=image_std)[0, 0, :]
-        noisy_vision_x = denormed_vision_x.cuda() + noise_start.cuda()
+        noisy_vision_x = denormed_vision_x.cuda() + torch.cat([noise_start] * ori_vision_x.shape[2]).cuda()
         # print(noisy_vision_x.shape) # torch.Size([16, 3, 336, 336])
         normed_noisy_vision_x = normalize(noisy_vision_x, mean=image_mean, std=image_std)
         image_features = model_clip.encode_image(resize_to_224(normed_noisy_vision_x))
@@ -202,6 +202,7 @@ def coi_attack_stage2(
             # 对 dim 维度求和，得到每个样本的 KL 散度，形状为 [batch_size]
             kl_divergence_per_sample = kl_divergence.sum(dim=-1)
             total_loss = kl_divergence_per_sample.mean()
+            # KL 散度越大 表示两个分布的差异越大
         else:
             raise ValueError("Invalid loss type: {}".format(LOSS))
         optimizer.zero_grad()
@@ -216,21 +217,22 @@ def coi_attack_stage1(
         ori_inputs,
         texts,
 ):
-    noise = torch.zeros_like(ori_vision_x[0, 0, :], requires_grad=True)
+    noise = torch.zeros_like(ori_vision_x[0, 0, 0:1, :], requires_grad=True)
     answers = []
-    
+
     alpha = 2 * EPS / ITER
     optimizer = torch.optim.Adam([noise], lr=alpha)
-    ori_answer = None
     for induction_text in texts:
         noise = coi_attack_stage2(
             induction_text, 
-            noise_start=noise,
+            noise_start=noise, 
             optimizer=optimizer,
-            ori_vision_x=ori_vision_x
+            ori_vision_x=ori_vision_x,
         )
+        # 多帧图对应同一个通用的noise
+        final_noise = torch.cat([noise] * ori_vision_x.shape[2])
         final_answer = inference(
-            input_vision_x=ori_vision_x.clone().half().cuda() + noise.cuda(), 
+            input_vision_x=ori_vision_x.clone().half().cuda() + final_noise.cuda(), 
             inputs=ori_inputs
         )
         answers.append(final_answer)
@@ -265,22 +267,22 @@ image_std = [0.26862954, 0.26130258, 0.27577711]
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='GPT Evaluation')
-    # parser.add_argument('--eps', type=float, default=0.1)
+    parser.add_argument('--eps', type=float, default=0.1)
     parser.add_argument('--iter', type=int, default=50)
     parser.add_argument('--query', type=int, default=10)
     parser.add_argument('--loss', type=str, default='cos', choices=['cos', 'kl'])
     args = parser.parse_args()
-    # EPS = args.eps
+    EPS = args.eps
     ITER = args.iter
     QUERY = args.query
     LOSS = args.loss
-    best_records_path = 'results/bench_attack_coi-opti_eps0.2_iter20_query8/records.json'
+    best_records_path = best_records_path = 'results/bench_attack_coi-opti_eps0.2_iter20_query8/records.json'
     best_records = []
     with open(best_records_path, 'r') as file:
         best_records = json.load(file)
 
     ok_unique_id = []
-    folder = f'results/bench_attack_coi-opti-judge-offline-{LOSS}_iter{ITER}_query{QUERY}'
+    folder = f'results/bench_attack_coi-opti-uap1-judge-offline-{LOSS}_eps{EPS}_iter{ITER}_query{QUERY}'
     os.makedirs(folder, exist_ok=True)
     json_path = os.path.join(folder, 'dolphin_output.json')
     if os.path.exists(json_path):
@@ -289,8 +291,8 @@ if __name__ == "__main__":
                 ok_unique_id.append(json.loads(line)['unique_id'])
 
     induction_records = []
-    coi_records_file = os.path.join(folder, 'records.json')
-    
+    coi_records = os.path.join(folder, 'records.json')
+
     model, image_processor, tokenizer = load_pretrained_modoel()
     tokenizer.eos_token_id = 50277
     tokenizer.pad_token_id = 50277
@@ -304,6 +306,8 @@ if __name__ == "__main__":
 
     with open('playground/dolphins_bench/dolphins_benchmark.json', 'r') as file:
         data = json.load(file)
+    # !!!!!! 追加模式记得注释掉！！！！！不要重复写入
+    target_fieldnames = ['task_name', 'video_path', 'instruction', 'ground_truth', 'target']
 
     try:
         with open(json_path, 'a') as file:
@@ -321,7 +325,7 @@ if __name__ == "__main__":
                     continue
                 
                 vision_x, inputs = get_model_inputs(video_path=video_path, instruction=instruction, model=model, image_processor=image_processor, tokenizer=tokenizer)
-                
+
                 now_dict = list(filter(lambda x: x["unique_id"] == unique_id, best_records))
                 assert len(now_dict) == 1
                 induction_texts = now_dict[0]["induction_records"]
@@ -331,6 +335,7 @@ if __name__ == "__main__":
                 # inference  !!!!!记得加noise
                 final_answer = induction_answers[-1]
 
+                # 写入json行数据
                 file.write(
                     json.dumps({
                         "unique_id": unique_id,
@@ -348,5 +353,5 @@ if __name__ == "__main__":
                     "induction_answers": induction_answers,
                 })
     finally:
-        with open(coi_records_file, 'w') as file:
+        with open(coi_records, 'w') as file:
             json.dump(induction_records, file, indent=4)

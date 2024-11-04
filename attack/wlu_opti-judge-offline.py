@@ -260,7 +260,7 @@ if __name__ == "__main__":
     EPS = args.eps
     ITER = args.iter
     QUERY = args.query
-    best_records_path = 'results/bench_attack_coi-opti-judge_eps0.2_iter20_query8/records.json'
+    best_records_path = 'results/bench_attack_coi-opti_eps0.2_iter20_query8/records.json'
     best_records = []
     with open(best_records_path, 'r') as file:
         best_records = json.load(file)

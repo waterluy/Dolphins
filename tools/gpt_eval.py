@@ -20,7 +20,7 @@ class GPTEvaluation:
             'Authorization': f'Bearer {self.api_key}'
         }
 
-    def call_chatgpt(self, chatgpt_messages, max_tokens=40, model='gpt-3.5-turbo'):    # gpt-3.5-turbo-0613 gpt-4o-all
+    def call_chatgpt(self, chatgpt_messages, max_tokens=40, model='gpt-4o-all'):    # gpt-3.5-turbo-0613 gpt-4o-all
         data = {
             "model": model,
             "messages": chatgpt_messages,
