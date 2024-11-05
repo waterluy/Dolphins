@@ -37,8 +37,8 @@ import clip
 import torch.nn.functional as F
 from torchvision import transforms
 from tools.gpt_coi import GPT
-from tools.gpt_eval import GPTEvaluation
 from tqdm import tqdm
+from tools.gpt_eval import GPTEvaluation
 from tools.model import GeneratorFromText
 
 def setup_seed(seed):
@@ -172,45 +172,50 @@ def coi_attack_stage2(
         ori_vision_x,
         noise_generator,
 ):    
-    texts = [induction_text for _ in range(ori_vision_x.shape[2])]
+    texts = [induction_text]
     resize_to_224 = transforms.Resize((224, 224))
 
-    for _ in range(ITER):
-        total_loss = 0
-        noise_start.requires_grad = True
-        text_features = model_clip.encode_text(clip.tokenize(texts).cuda())
-        # print(text_features.shape)  # torch.Size([16, 512])
-        denormed_vision_x = denormalize(ori_vision_x, mean=image_mean, std=image_std)[0, 0, :]
-        noisy_vision_x = denormed_vision_x.cuda() + noise_start.cuda()
-        # print(noisy_vision_x.shape) # torch.Size([16, 3, 336, 336])
-        normed_noisy_vision_x = normalize(noisy_vision_x, mean=image_mean, std=image_std)
-        image_features = model_clip.encode_image(resize_to_224(normed_noisy_vision_x))
-        #  print(image_features.shape) # torch.Size([16, 512])
-        if LOSS == 'cos':
-            text_features_normed = F.normalize(text_features, dim=-1)
-            # print(text_features_normed.shape)   # torch.Size([16, 512])
-            image_features_normed = F.normalize(image_features, dim=-1)
-            # print(image_features_normed.shape)  # torch.Size([16, 512])
-            total_loss = - torch.cosine_similarity(image_features_normed, text_features_normed, dim=1, eps=1e-8)
-            # print(total_loss.shape) # torch.Size([16])
-            total_loss = total_loss.mean()
-            # print(total_loss, total_loss.shape) 
-        elif LOSS == 'kl':
-            # 将两个嵌入特征转换为概率分布, text的特征指导image的特征
-            text_prob = F.softmax(text_features, dim=-1)       # 文本特征的概率分布
-            image_log_prob = F.log_softmax(image_features, dim=-1)  # 图像特征的对数概率分布
-            # 计算 KL 散度
-            kl_divergence = F.kl_div(image_log_prob, text_prob, reduction='none')
-            # 对 dim 维度求和，得到每个样本的 KL 散度，形状为 [batch_size]
-            kl_divergence_per_sample = kl_divergence.sum(dim=-1)
-            total_loss = kl_divergence_per_sample.mean()
-            # KL 散度越大 表示两个分布的差异越大
-        else:
-            raise ValueError("Invalid loss type: {}".format(LOSS))
-        optimizer.zero_grad()
-        total_loss.backward()
-        optimizer.step()
-        noise_start = torch.clamp(noise_start.detach(), -EPS, EPS)
+    for _ in range(ITER):   # epoch   bs=ori_vision_x.shape[2]
+        bs = ori_vision_x.shape[2]
+        for b in range(bs):
+            total_loss = 0
+            noise_start.requires_grad = True
+            text_features = model_clip.encode_text(clip.tokenize(texts).cuda())
+            # print(text_features.shape)  # torch.Size([16, 512])
+            denormed_vision_x = denormalize(ori_vision_x, mean=image_mean, std=image_std)[0, 0, b:b+1]
+            # print(denormed_vision_x.shape)  # torch.Size([1, 3, 336, 336])
+            # print(noise_start.shape)    # torch.Size([1, 3, 336, 336])
+            noisy_vision_x = denormed_vision_x.cuda()
+            noisy_vision_x = noisy_vision_x + noise_start.cuda()
+            # print(noisy_vision_x.shape) # torch.Size([16, 3, 336, 336])
+            normed_noisy_vision_x = normalize(noisy_vision_x, mean=image_mean, std=image_std)
+            image_features = model_clip.encode_image(resize_to_224(normed_noisy_vision_x))
+            # print(image_features.shape) # torch.Size([16, 512])
+            if LOSS == 'cos':
+                text_features_normed = F.normalize(text_features, dim=-1)
+                # print(text_features_normed.shape)   # torch.Size([16, 512])
+                image_features_normed = F.normalize(image_features, dim=-1)
+                # print(image_features_normed.shape)  # torch.Size([16, 512])
+                total_loss = - torch.cosine_similarity(image_features_normed, text_features_normed, dim=1, eps=1e-8)
+                # print(total_loss.shape) # torch.Size([16])
+                total_loss = total_loss.mean()
+                # print(total_loss, total_loss.shape) 
+            elif LOSS == 'kl':
+                # 将两个嵌入特征转换为概率分布, text的特征指导image的特征
+                text_prob = F.softmax(text_features, dim=-1)       # 文本特征的概率分布
+                image_log_prob = F.log_softmax(image_features, dim=-1)  # 图像特征的对数概率分布
+                # 计算 KL 散度
+                kl_divergence = F.kl_div(image_log_prob, text_prob, reduction='none')
+                # 对 dim 维度求和，得到每个样本的 KL 散度，形状为 [batch_size]
+                kl_divergence_per_sample = kl_divergence.sum(dim=-1)
+                total_loss = kl_divergence_per_sample.mean()
+                # KL 散度越大 表示两个分布的差异越大
+            else:
+                raise ValueError("Invalid loss type: {}".format(LOSS))
+            optimizer.zero_grad()
+            total_loss.backward()
+            optimizer.step()
+            noise_start = torch.clamp(noise_start.detach(), -EPS, EPS)
 
     return noise_start.detach()
 
@@ -226,19 +231,21 @@ def coi_attack_stage1(
         eps=EPS,
     )
     answers = []
-    
+
     alpha = 2 * EPS / ITER
     optimizer = torch.optim.Adam(noise_generator.parameters(), lr=alpha)
     for induction_text in texts:
         noise = coi_attack_stage2(
             induction_text, 
-            noise_start=noise,
+            noise_start=noise, 
             optimizer=optimizer,
             ori_vision_x=ori_vision_x,
             noise_generator=noise_generator,
         )
+        # 多帧图对应同一个通用的noise
+        final_noise = torch.cat([noise] * ori_vision_x.shape[2])
         final_answer = inference(
-            input_vision_x=ori_vision_x.clone().half().cuda() + noise.cuda(), 
+            input_vision_x=ori_vision_x.clone().half().cuda() + final_noise.cuda(), 
             inputs=ori_inputs
         )
         answers.append(final_answer)
@@ -288,7 +295,7 @@ if __name__ == "__main__":
         best_records = json.load(file)
 
     ok_unique_id = []
-    folder = f'results/bench_attack_coi-opti-judge-offline-{LOSS}-i1_eps{EPS}_iter{ITER}_query{QUERY}'
+    folder = f'results/bench_attack_coi-opti-uap2-judge-offline-{LOSS}-i1_eps{EPS}_iter{ITER}_query{QUERY}'
     os.makedirs(folder, exist_ok=True)
     json_path = os.path.join(folder, 'dolphin_output.json')
     if os.path.exists(json_path):
@@ -297,8 +304,8 @@ if __name__ == "__main__":
                 ok_unique_id.append(json.loads(line)['unique_id'])
 
     induction_records = []
-    coi_records_file = os.path.join(folder, 'records.json')
-    
+    coi_records = os.path.join(folder, 'records.json')
+
     model, image_processor, tokenizer = load_pretrained_modoel()
     tokenizer.eos_token_id = 50277
     tokenizer.pad_token_id = 50277
@@ -313,6 +320,8 @@ if __name__ == "__main__":
 
     with open('playground/dolphins_bench/dolphins_benchmark.json', 'r') as file:
         data = json.load(file)
+    # !!!!!! 追加模式记得注释掉！！！！！不要重复写入
+    target_fieldnames = ['task_name', 'video_path', 'instruction', 'ground_truth', 'target']
 
     try:
         with open(json_path, 'a') as file:
@@ -330,7 +339,7 @@ if __name__ == "__main__":
                     continue
                 
                 vision_x, inputs = get_model_inputs(video_path=video_path, instruction=instruction, model=model, image_processor=image_processor, tokenizer=tokenizer)
-                
+
                 now_dict = list(filter(lambda x: x["unique_id"] == unique_id, best_records))
                 assert len(now_dict) == 1
                 induction_texts = now_dict[0]["induction_records"]
@@ -342,6 +351,7 @@ if __name__ == "__main__":
                 # inference  !!!!!记得加noise
                 final_answer = induction_answers[-1]
 
+                # 写入json行数据
                 file.write(
                     json.dumps({
                         "unique_id": unique_id,
@@ -359,5 +369,5 @@ if __name__ == "__main__":
                     "induction_answers": induction_answers,
                 })
     finally:
-        with open(coi_records_file, 'w') as file:
+        with open(coi_records, 'w') as file:
             json.dump(induction_records, file, indent=4)
