@@ -36,9 +36,9 @@ from peft import (
 import clip
 import torch.nn.functional as F
 from torchvision import transforms
+from tools.gpt_coi import GPT
 from tqdm import tqdm
-from tools.model import GeneratorFromText, TextToNoiseGenerator
-from torchvision.transforms import InterpolationMode
+from tools.gpt_eval import GPTEvaluation
 
 def setup_seed(seed):
     torch.manual_seed(seed)
@@ -164,198 +164,76 @@ def get_ad_3p(task):
     else:
         raise ValueError("Invalid task name: {}".format(task))
 
-def text_supervision(
-        ori_vision_x,
-        noise_start,
-        text_features,
-        b_idx
-):
-    resize_to_224 = transforms.Resize((224, 224), interpolation=InterpolationMode.BICUBIC, max_size=None)
-    denormed_vision_x = denormalize(ori_vision_x, mean=image_mean, std=image_std)[0, 0, b_idx:b_idx+1]
-    # print(denormed_vision_x.shape)  # torch.Size([1, 3, 336, 336])
-    noisy_vision_x = denormed_vision_x.cuda()
-    noisy_vision_x = noisy_vision_x + noise_start.cuda()
-    # print(noisy_vision_x.shape) # torch.Size([1, 3, 336, 336])
-    normed_noisy_vision_x = normalize(noisy_vision_x, mean=image_mean, std=image_std)
-    image_features = model_clip.encode_image(resize_to_224(normed_noisy_vision_x))
-    if LOSS == 'cos':
-        text_features_normed = F.normalize(text_features, dim=-1)
-        # print(text_features_normed.shape)   # torch.Size([16, 512])
-        image_features_normed = F.normalize(image_features, dim=-1)
-        # print(image_features_normed.shape)  # torch.Size([16, 512])
-        total_loss = - torch.cosine_similarity(image_features_normed, text_features_normed, dim=1, eps=1e-8)
-        # print(total_loss.shape) # torch.Size([16])
-        total_loss = total_loss.mean()
-        # print(total_loss, total_loss.shape) 
-    elif LOSS == 'kl':
-        # 将两个嵌入特征转换为概率分布, text的特征指导image的特征
-        text_prob = F.softmax(text_features, dim=-1)       # 文本特征的概率分布
-        image_log_prob = F.log_softmax(image_features, dim=-1)  # 图像特征的对数概率分布
-        # 计算 KL 散度
-        kl_divergence = F.kl_div(image_log_prob, text_prob, reduction='none')
-        # 对 dim 维度求和，得到每个样本的 KL 散度，形状为 [batch_size]
-        kl_divergence_per_sample = kl_divergence.sum(dim=-1)
-        total_loss = kl_divergence_per_sample.mean()
-        # KL 散度越大 表示两个分布的差异越大
-    else:
-        raise ValueError("Invalid loss type: {}".format(LOSS))
-    return total_loss
-
-def inverse3p_supervision(
-        ori_vision_x,
-        noise_start,
-        ad_3p_stage,
-        b_idx
-):
-    denormed_vision_x = denormalize(ori_vision_x, mean=image_mean, std=image_std)[0, 0, b_idx:b_idx+1]
-    # print(denormed_vision_x.shape)  # torch.Size([1, 3, 336, 336])
-    noisy_vision_x = denormed_vision_x.cuda()
-    noisy_vision_x = noisy_vision_x + noise_start.cuda()
-    # print(noisy_vision_x.shape) # torch.Size([1, 3, 336, 336])
-    normed_noisy_vision_x = normalize(noisy_vision_x, mean=image_mean, std=image_std)
-    resize_to_224 = transforms.Resize((224, 224), interpolation=InterpolationMode.BICUBIC, max_size=None)
-    # 定义目标文本和其他文本
-    texts = ["perception prediction plan", "perception prediction", "perception"]
-    text_tokens = clip.tokenize(texts).cuda()
-    logits_per_image, _ = model_clip(resize_to_224(normed_noisy_vision_x), text_tokens)
-    logits_per_image = torch.softmax(logits_per_image, dim=-1)
-    target_labels = torch.full(logits_per_image.shape, -1).cuda()   # 初始值为-1以抑制非目标类别
-    if ad_3p_stage == 'perception':
-        target_labels[:, 2] = 1
-    elif ad_3p_stage == 'prediction':
-        target_labels[:, 1] = 1
-    elif ad_3p_stage == 'plan':
-        target_labels[:, 0] = 1
-    mask = target_labels != -1
-    # 最大化target label 同时抑制其他label
-    bs = logits_per_image.shape[0]
-    loss = -torch.log(1e-8 + logits_per_image[mask].view(bs, -1)).mean(dim=-1, keepdim=True) + torch.log(1e-8 + logits_per_image[~mask].view(bs, -1)).mean(dim=-1, keepdim=True)
-    loss = loss.mean(dim=0)
-    return loss
-
-def clean_supervision(
-        ori_vision_x,
-        noise_start,
-        b_idx,
-):
-    denormed_vision_x = denormalize(ori_vision_x, mean=image_mean, std=image_std)[0, 0, b_idx:b_idx+1]
-    # print(denormed_vision_x.shape)  # torch.Size([1, 3, 336, 336])
-    noisy_vision_x = denormed_vision_x.cuda()
-    noisy_vision_x = noisy_vision_x + noise_start.cuda()
-    # print(noisy_vision_x.shape) # torch.Size([1, 3, 336, 336])
-    normed_noisy_vision_x = normalize(noisy_vision_x, mean=image_mean, std=image_std)
-    resize_to_224 = transforms.Resize((224, 224), interpolation=InterpolationMode.BICUBIC, max_size=None)
-    clean_features = model_clip.encode_image(resize_to_224(ori_vision_x[0, 0, b_idx:b_idx+1]).cuda())
-    noise_features = model_clip.encode_image(resize_to_224(normed_noisy_vision_x))
-    if LOSS == 'cos':
-        clean_features_normed = F.normalize(clean_features, dim=-1)
-        # print(text_features_normed.shape)   # torch.Size([16, 512])
-        noise_features_normed = F.normalize(noise_features, dim=-1)
-        # print(image_features_normed.shape)  # torch.Size([16, 512])
-        total_loss = torch.cosine_similarity(clean_features_normed, noise_features_normed, dim=1, eps=1e-8)
-        # print(total_loss.shape) # torch.Size([16])
-        total_loss = total_loss.mean()
-        # print(total_loss, total_loss.shape) 
-    elif LOSS == 'kl':
-        # 将两个嵌入特征转换为概率分布, clean的特征指导noise的特征
-        clean_prob = F.softmax(clean_features, dim=-1)       # 文本特征的概率分布
-        noise_log_prob = F.log_softmax(noise_features, dim=-1)  # 图像特征的对数概率分布
-        # 计算 KL 散度
-        kl_divergence = F.kl_div(noise_log_prob, clean_prob, reduction='none')
-        # 对 dim 维度求和，得到每个样本的 KL 散度，形状为 [batch_size]
-        kl_divergence_per_sample = kl_divergence.sum(dim=-1)
-        total_loss = - kl_divergence_per_sample.mean()
-        # KL 散度越大 表示两个分布的差异越大
-    else:
-        raise ValueError("Invalid loss type: {}".format(LOSS))
-    return total_loss
-
 def coi_attack_stage2(
         induction_text,
+        noise_start,
         optimizer,
         ori_vision_x,
-        noise_generator,
-        ad_3p_stage
 ):    
     texts = [induction_text]
+    resize_to_224 = transforms.Resize((224, 224))
 
     for _ in range(ITER):   # epoch   bs=ori_vision_x.shape[2]
         bs = ori_vision_x.shape[2]
         for b in range(bs):
             total_loss = 0
+            noise_start.requires_grad = True
             text_features = model_clip.encode_text(clip.tokenize(texts).cuda())
-            # print(text_features.shape)  # torch.Size([1, 512])
-            noise_start = noise_generator(text_features)
-            if torch.isnan(noise_start).any():
-                print(noise_start)
-                quit()
-            # print(noise_start.shape)    # # torch.Size([1, 3, 336, 336])
-            if args.sup_text:
-                loss_text = text_supervision(
-                    ori_vision_x=ori_vision_x,
-                    noise_start=noise_start,
-                    text_features=text_features,
-                    b_idx=b,
-                )
-                # print(loss_text)
-                total_loss = total_loss + loss_text
-            if args.sup_3p:
-                loss_inverse3p = inverse3p_supervision(
-                    ori_vision_x=ori_vision_x,
-                    noise_start=noise_start,
-                    ad_3p_stage=ad_3p_stage,
-                    b_idx=b,
-                )
-                # print(0.02 * loss_inverse3p)
-                total_loss = total_loss + 0.02 * loss_inverse3p
-            if args.sup_clean:
-                loss_clean = clean_supervision(
-                    ori_vision_x=ori_vision_x,
-                    noise_start=noise_start,
-                    b_idx=b,
-                )
-                # print(0.02 * loss_clean)
-                total_loss = total_loss + loss_clean
-            # print(total_loss)
+            # print(text_features.shape)  # torch.Size([16, 512])
+            denormed_vision_x = denormalize(ori_vision_x, mean=image_mean, std=image_std)[0, 0, b:b+1]
+            # print(denormed_vision_x.shape)  # torch.Size([1, 3, 336, 336])
+            # print(noise_start.shape)    # torch.Size([1, 3, 336, 336])
+            noisy_vision_x = denormed_vision_x.cuda()
+            noisy_vision_x = noisy_vision_x + noise_start.cuda()
+            # print(noisy_vision_x.shape) # torch.Size([16, 3, 336, 336])
+            normed_noisy_vision_x = normalize(noisy_vision_x, mean=image_mean, std=image_std)
+            image_features = model_clip.encode_image(resize_to_224(normed_noisy_vision_x))
+            # print(image_features.shape) # torch.Size([16, 512])
+            if LOSS == 'cos':
+                text_features_normed = F.normalize(text_features, dim=-1)
+                # print(text_features_normed.shape)   # torch.Size([16, 512])
+                image_features_normed = F.normalize(image_features, dim=-1)
+                # print(image_features_normed.shape)  # torch.Size([16, 512])
+                total_loss = - torch.cosine_similarity(image_features_normed, text_features_normed, dim=1, eps=1e-8)
+                # print(total_loss.shape) # torch.Size([16])
+                total_loss = total_loss.mean()
+                # print(total_loss, total_loss.shape) 
+            elif LOSS == 'kl':
+                # 将两个嵌入特征转换为概率分布, text的特征指导image的特征
+                text_prob = F.softmax(text_features, dim=-1)       # 文本特征的概率分布
+                image_log_prob = F.log_softmax(image_features, dim=-1)  # 图像特征的对数概率分布
+                # 计算 KL 散度
+                kl_divergence = F.kl_div(image_log_prob, text_prob, reduction='none')
+                # 对 dim 维度求和，得到每个样本的 KL 散度，形状为 [batch_size]
+                kl_divergence_per_sample = kl_divergence.sum(dim=-1)
+                total_loss = kl_divergence_per_sample.mean()
+                # KL 散度越大 表示两个分布的差异越大
+            else:
+                raise ValueError("Invalid loss type: {}".format(LOSS))
             optimizer.zero_grad()
             total_loss.backward()
-            # torch.nn.utils.clip_grad_norm_(noise_generator.parameters(), max_norm=2.0)
             optimizer.step()
-    with torch.no_grad():
-        noise_start = noise_generator(text_features.clone())
+            noise_start = torch.clamp(noise_start.detach(), -EPS, EPS)
+
     return noise_start.detach()
 
 def coi_attack_stage1(
         ori_vision_x,
         ori_inputs,
         texts,
-        task,
 ):
-    ad_3p_stage = get_ad_3p(task)
-    # noise_generator = GeneratorFromText(
-    #     text_dim=512,
-    #     output_shape=ori_vision_x.shape[3:],   # (3, 336, 336),
-    #     num_filters=[128, 64, 32],
-    #     eps=EPS,
-    # ).cuda()
-    noise_generator = TextToNoiseGenerator(
-        text_dim=512,
-        output_shape=ori_vision_x.shape[3:],
-        eps=EPS,
-    ).cuda()
+    noise = torch.zeros_like(ori_vision_x[0, 0, 0:1, :], requires_grad=True)
     answers = []
 
     alpha = 2 * EPS / ITER
-    optimizer = torch.optim.Adam(noise_generator.parameters(), lr=alpha)
+    optimizer = torch.optim.Adam([noise], lr=alpha)
     for induction_text in texts:
-        with torch.cuda.amp.autocast():
-            noise = coi_attack_stage2(
-                induction_text, 
-                optimizer=optimizer,
-                ori_vision_x=ori_vision_x,
-                noise_generator=noise_generator,
-                ad_3p_stage=ad_3p_stage,
-            )
+        noise = coi_attack_stage2(
+            induction_text, 
+            noise_start=noise, 
+            optimizer=optimizer,
+            ori_vision_x=ori_vision_x,
+        )
         # 多帧图对应同一个通用的noise
         final_noise = torch.cat([noise] * ori_vision_x.shape[2])
         final_answer = inference(
@@ -394,13 +272,10 @@ image_std = [0.26862954, 0.26130258, 0.27577711]
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='GPT Evaluation')
-    parser.add_argument('--eps', type=float, default=0.2)
-    parser.add_argument('--iter', type=int, default=20)
-    parser.add_argument('--query', type=int, default=8)
+    parser.add_argument('--eps', type=float, default=0.1)
+    parser.add_argument('--iter', type=int, default=50)
+    parser.add_argument('--query', type=int, default=10)
     parser.add_argument('--loss', type=str, default='cos', choices=['cos', 'kl'])
-    parser.add_argument('--sup-clean', action='store_true')
-    parser.add_argument('--sup-text', action='store_true')
-    parser.add_argument('--sup-3p', action='store_true')
     args = parser.parse_args()
     EPS = args.eps
     ITER = args.iter
@@ -411,17 +286,8 @@ if __name__ == "__main__":
     with open(best_records_path, 'r') as file:
         best_records = json.load(file)
 
-    model_clip, preprocess_clip = clip.load("ViT-B/32", device=torch.device('cuda')) 
-
     ok_unique_id = []
-    iii = ''
-    if args.sup_text:
-        iii += '-text'
-    if args.sup_3p:
-        iii += '-3p'
-    if args.sup_clean:
-        iii += '-clean'
-    folder = f'results/bench_attack_coi-opti-uap2-judge-offline-{LOSS}-i1{iii}_eps{EPS}_iter{ITER}_query{QUERY}'
+    folder = f'results/bench_attack_coi-opti-uap2-judge-offline-{LOSS}_eps{EPS}_iter{ITER}_query{QUERY}'
     os.makedirs(folder, exist_ok=True)
     json_path = os.path.join(folder, 'dolphin_output.json')
     if os.path.exists(json_path):
@@ -436,7 +302,7 @@ if __name__ == "__main__":
     tokenizer.eos_token_id = 50277
     tokenizer.pad_token_id = 50277
     device = model.device
-    model_clip.eval()
+    model_clip, preprocess_clip = clip.load("ViT-B/32", device=torch.device('cuda')) 
 
     generation_kwargs = {'max_new_tokens': 512, 'temperature': 1,
                                 'top_k': 0, 'top_p': 1, 'no_repeat_ngram_size': 3, 'length_penalty': 1,
@@ -471,7 +337,7 @@ if __name__ == "__main__":
                 if QUERY < len(induction_texts):
                     induction_texts = induction_texts[:QUERY]
                 
-                noise, induction_answers = coi_attack_stage1(ori_vision_x=vision_x, ori_inputs=inputs, texts=induction_texts, task=task_name)
+                noise, induction_answers = coi_attack_stage1(ori_vision_x=vision_x, ori_inputs=inputs, texts=induction_texts)
 
                 # inference  !!!!!记得加noise
                 final_answer = induction_answers[-1]
