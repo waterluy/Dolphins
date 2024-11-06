@@ -173,7 +173,7 @@ def apply_transform_and_generate_mask(patch, target_size):
         - transformed_patch: 变换后的补丁 (C, H', W')
         - transformed_mask: 与补丁对应的掩码 (1, H', W')
     """
-    c, h, w = patch.shape
+    bs, c, h, w = patch.shape
     
     random_affine = transforms.RandomAffine(
         degrees=(-5, 5), 
@@ -211,21 +211,19 @@ def coi_attack_stage2(
         optimizer,
         ori_vision_x,
 ):    
-    texts = [induction_text]
+    texts = [induction_text for _ in range(vision_x.shape[2])]
     resize_to_224 = transforms.Resize((224, 224))
     for _ in range(ITER):
-        bs = ori_vision_x.shape[2]
-        for b in range(bs):
             total_loss = 0
             patch_start.requires_grad = True
             text_features = model_clip.encode_text(clip.tokenize(texts).cuda())
             # print(text_features.shape)  # torch.Size([16, 512])
-            denormed_vision_x = denormalize(ori_vision_x, mean=image_mean, std=image_std)[0, 0, b:b+1].cuda()
+            denormed_vision_x = denormalize(ori_vision_x, mean=image_mean, std=image_std)[0, 0, :].cuda()
             # 生成与图像同尺寸的变换补丁和掩码
             input_image_size = denormed_vision_x.shape[2:]  # 输入图像目标尺寸
             transformed_patch, transformed_mask = apply_transform_and_generate_mask(patch_start, input_image_size)
             # 将补丁放置到图像的指定位置，仅覆盖非空白部分
-            denormed_vision_x[0, :] = denormed_vision_x[0, :] * (1 - transformed_mask.cuda()) + transformed_patch.cuda() * transformed_mask.cuda()
+            denormed_vision_x = denormed_vision_x * (1 - transformed_mask.cuda()) + transformed_patch.cuda() * transformed_mask.cuda()
             # from torchvision.utils import save_image
             # save_image(transformed_patch.detach(), f"p.png")
             # save_image((transformed_patch * transformed_mask).detach(), "m.png")
@@ -269,7 +267,7 @@ def coi_attack_stage1(
     patch_size = (int(h * patch_ratio), int(w * patch_ratio))  # 计算补丁大小
     input_image_size = ori_vision_x.shape[4:]  # 输入图像目标尺寸
     # 初始化通用对抗补丁
-    adversarial_patch = torch.rand((c, *patch_size), requires_grad=True)
+    adversarial_patch = torch.rand((batch_size, c, *patch_size), requires_grad=True)
     answers = []
     
     alpha = 2 * EPS / ITER
@@ -282,9 +280,8 @@ def coi_attack_stage1(
             ori_vision_x=ori_vision_x,
         )
         final_input_vision_x = ori_vision_x.clone()
-        for b in range(batch_size):
-            transformed_patch, transformed_mask = apply_transform_and_generate_mask(adversarial_patch, input_image_size)
-            final_input_vision_x[0, 0, b, :] = final_input_vision_x[0, 0, b, :] * (1 - transformed_mask) + transformed_patch * transformed_mask
+        transformed_patch, transformed_mask = apply_transform_and_generate_mask(adversarial_patch, input_image_size)
+        final_input_vision_x[0, 0, :] = final_input_vision_x[0, 0, :] * (1 - transformed_mask) + transformed_patch * transformed_mask
         final_answer = inference(
             input_vision_x=final_input_vision_x.half().cuda(),
             inputs=ori_inputs
@@ -321,9 +318,9 @@ image_std = [0.26862954, 0.26130258, 0.27577711]
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='GPT Evaluation')
-    parser.add_argument('--eps', type=float, default=0.1)
-    parser.add_argument('--iter', type=int, default=50)
-    parser.add_argument('--query', type=int, default=10)
+    parser.add_argument('--eps', type=float, default=0.2)
+    parser.add_argument('--iter', type=int, default=20)
+    parser.add_argument('--query', type=int, default=8)
     parser.add_argument('--loss', type=str, default='cos', choices=['cos', 'kl'])
     args = parser.parse_args()
     EPS = args.eps
@@ -341,7 +338,7 @@ if __name__ == "__main__":
         best_records = json.load(file)
 
     ok_unique_id = []
-    folder = f'results/bench_attack_coi-opti-judge-offline-{LOSS}-patch_eps{EPS}_iter{ITER}_query{QUERY}'
+    folder = f'results/bench_attack_coi-opti-judge-offline-{LOSS}-patchall_eps{EPS}_iter{ITER}_query{QUERY}'
     os.makedirs(folder, exist_ok=True)
     json_path = os.path.join(folder, 'dolphin_output.json')
     if os.path.exists(json_path):
