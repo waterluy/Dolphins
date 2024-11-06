@@ -273,14 +273,15 @@ def clean_supervision(
 
 def adj_supervision(
         ori_vision_x,
-        noise_start,
+        patch_start,
 ):
-    denormed_vision_x = denormalize(ori_vision_x, mean=image_mean, std=image_std)[0, 0, :]
-    # print(denormed_vision_x.shape)  # torch.Size([1, 3, 336, 336])
-    noisy_vision_x = denormed_vision_x.cuda()
-    noisy_vision_x = noisy_vision_x + noise_start.cuda()
-    # print(noisy_vision_x.shape) # torch.Size([1, 3, 336, 336])
-    normed_noisy_vision_x = normalize(noisy_vision_x, mean=image_mean, std=image_std)
+    denormed_vision_x = denormalize(ori_vision_x, mean=image_mean, std=image_std)[0, 0, :].cuda()
+    # 生成与图像同尺寸的变换补丁和掩码
+    input_image_size = denormed_vision_x.shape[2:]  # 输入图像目标尺寸
+    transformed_patch, transformed_mask = apply_transform_and_generate_mask(patch_start, input_image_size)
+    # 将补丁放置到图像的指定位置，仅覆盖非空白部分
+    denormed_vision_x = denormed_vision_x * (1 - transformed_mask.cuda()) + transformed_patch.cuda() * transformed_mask.cuda()
+    normed_noisy_vision_x = normalize(denormed_vision_x, mean=image_mean, std=image_std)
     resize_to_224 = transforms.Resize((224, 224), interpolation=InterpolationMode.BICUBIC, max_size=None)
     # 定义目标文本和其他文本
     texts = ["Stable", "Cautious", "Keeping Safe Distance", "Obeying Signals", "Paying Attention",
@@ -369,7 +370,7 @@ def coi_attack_stage2(
             if args.sup_adj:
                 loss_adj = adj_supervision(
                     ori_vision_x=ori_vision_x,
-                    noise_start=patch_start,
+                    patch_start=patch_start,
                 )
                 # print(0.02 * loss_clean)
                 total_loss = total_loss + 0.05 * loss_adj
