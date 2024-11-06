@@ -36,9 +36,8 @@ from peft import (
 import clip
 import torch.nn.functional as F
 from torchvision import transforms
-from tools.gpt_coi import GPT
-from tools.gpt_eval import GPTEvaluation
 from tqdm import tqdm
+from torchvision.transforms import InterpolationMode
 
 def setup_seed(seed):
     torch.manual_seed(seed)
@@ -164,6 +163,140 @@ def get_ad_3p(task):
     else:
         raise ValueError("Invalid task name: {}".format(task))
 
+def text_supervision(
+        ori_vision_x,
+        patch_start,
+        text_features,
+):
+    resize_to_224 = transforms.Resize((224, 224), interpolation=InterpolationMode.BICUBIC, max_size=None)
+    denormed_vision_x = denormalize(ori_vision_x, mean=image_mean, std=image_std)[0, 0, :].cuda()
+    # 生成与图像同尺寸的变换补丁和掩码
+    input_image_size = denormed_vision_x.shape[2:]  # 输入图像目标尺寸
+    transformed_patch, transformed_mask = apply_transform_and_generate_mask(patch_start, input_image_size)
+    # 将补丁放置到图像的指定位置，仅覆盖非空白部分
+    denormed_vision_x = denormed_vision_x * (1 - transformed_mask.cuda()) + transformed_patch.cuda() * transformed_mask.cuda()
+    normed_noisy_vision_x = normalize(denormed_vision_x, mean=image_mean, std=image_std)
+    image_features = model_clip.encode_image(resize_to_224(normed_noisy_vision_x))
+    if LOSS == 'cos':
+        text_features_normed = F.normalize(text_features, dim=-1)
+        # print(text_features_normed.shape)   # torch.Size([16, 512])
+        image_features_normed = F.normalize(image_features, dim=-1)
+        # print(image_features_normed.shape)  # torch.Size([16, 512])
+        total_loss = - torch.cosine_similarity(image_features_normed, text_features_normed, dim=1, eps=1e-8)
+        # print(total_loss.shape) # torch.Size([16])
+        total_loss = total_loss.mean()
+        # print(total_loss, total_loss.shape) 
+    elif LOSS == 'kl':
+        # 将两个嵌入特征转换为概率分布, text的特征指导image的特征
+        text_prob = F.softmax(text_features, dim=-1)       # 文本特征的概率分布
+        image_log_prob = F.log_softmax(image_features, dim=-1)  # 图像特征的对数概率分布
+        # 计算 KL 散度
+        kl_divergence = F.kl_div(image_log_prob, text_prob, reduction='none')
+        # 对 dim 维度求和，得到每个样本的 KL 散度，形状为 [batch_size]
+        kl_divergence_per_sample = kl_divergence.sum(dim=-1)
+        total_loss = kl_divergence_per_sample.mean()
+        # KL 散度越大 表示两个分布的差异越大
+    else:
+        raise ValueError("Invalid loss type: {}".format(LOSS))
+    return total_loss
+
+def inverse3p_supervision(
+        ori_vision_x,
+        patch_start,
+        ad_3p_stage,
+):
+    resize_to_224 = transforms.Resize((224, 224), interpolation=InterpolationMode.BICUBIC, max_size=None)
+    denormed_vision_x = denormalize(ori_vision_x, mean=image_mean, std=image_std)[0, 0, :].cuda()
+    # 生成与图像同尺寸的变换补丁和掩码
+    input_image_size = denormed_vision_x.shape[2:]  # 输入图像目标尺寸
+    transformed_patch, transformed_mask = apply_transform_and_generate_mask(patch_start, input_image_size)
+    # 将补丁放置到图像的指定位置，仅覆盖非空白部分
+    denormed_vision_x = denormed_vision_x * (1 - transformed_mask.cuda()) + transformed_patch.cuda() * transformed_mask.cuda()
+    normed_noisy_vision_x = normalize(denormed_vision_x, mean=image_mean, std=image_std)
+    resize_to_224 = transforms.Resize((224, 224), interpolation=InterpolationMode.BICUBIC, max_size=None)
+    # 定义目标文本和其他文本
+    texts = ["perception prediction plan", "perception prediction", "perception"]
+    text_tokens = clip.tokenize(texts).cuda()
+    logits_per_image, _ = model_clip(resize_to_224(normed_noisy_vision_x), text_tokens)
+    logits_per_image = torch.softmax(logits_per_image, dim=-1)
+    target_labels = torch.full(logits_per_image.shape, -1).cuda()   # 初始值为-1以抑制非目标类别
+    if ad_3p_stage == 'perception':
+        target_labels[:, 2] = 1
+    elif ad_3p_stage == 'prediction':
+        target_labels[:, 1] = 1
+    elif ad_3p_stage == 'plan':
+        target_labels[:, 0] = 1
+    mask = target_labels != -1
+    # 最大化target label 同时抑制其他label
+    bs = logits_per_image.shape[0]
+    loss = -torch.log(1e-8 + logits_per_image[mask].view(bs, -1)).mean(dim=-1, keepdim=True) + torch.log(1e-8 + logits_per_image[~mask].view(bs, -1)).mean(dim=-1, keepdim=True)
+    loss = loss.mean(dim=0)
+    return loss
+
+def clean_supervision(
+        ori_vision_x,
+        patch_start,
+):
+    resize_to_224 = transforms.Resize((224, 224), interpolation=InterpolationMode.BICUBIC, max_size=None)
+    denormed_vision_x = denormalize(ori_vision_x, mean=image_mean, std=image_std)[0, 0, :].cuda()
+    # 生成与图像同尺寸的变换补丁和掩码
+    input_image_size = denormed_vision_x.shape[2:]  # 输入图像目标尺寸
+    transformed_patch, transformed_mask = apply_transform_and_generate_mask(patch_start, input_image_size)
+    # 将补丁放置到图像的指定位置，仅覆盖非空白部分
+    denormed_vision_x = denormed_vision_x * (1 - transformed_mask.cuda()) + transformed_patch.cuda() * transformed_mask.cuda()
+    normed_noisy_vision_x = normalize(denormed_vision_x, mean=image_mean, std=image_std)
+    noise_features = model_clip.encode_image(resize_to_224(normed_noisy_vision_x))
+            
+    clean_features = model_clip.encode_image(resize_to_224(ori_vision_x[0, 0, :]).cuda())
+    if LOSS == 'cos':
+        clean_features_normed = F.normalize(clean_features, dim=-1)
+        # print(text_features_normed.shape)   # torch.Size([16, 512])
+        noise_features_normed = F.normalize(noise_features, dim=-1)
+        # print(image_features_normed.shape)  # torch.Size([16, 512])
+        total_loss = torch.cosine_similarity(clean_features_normed, noise_features_normed, dim=1, eps=1e-8)
+        # print(total_loss.shape) # torch.Size([16])
+        total_loss = total_loss.mean()
+        # print(total_loss, total_loss.shape) 
+    elif LOSS == 'kl':
+        # 将两个嵌入特征转换为概率分布, clean的特征指导noise的特征
+        clean_prob = F.softmax(clean_features, dim=-1)       # 文本特征的概率分布
+        noise_log_prob = F.log_softmax(noise_features, dim=-1)  # 图像特征的对数概率分布
+        # 计算 KL 散度
+        kl_divergence = F.kl_div(noise_log_prob, clean_prob, reduction='none')
+        # 对 dim 维度求和，得到每个样本的 KL 散度，形状为 [batch_size]
+        kl_divergence_per_sample = kl_divergence.sum(dim=-1)
+        total_loss = - kl_divergence_per_sample.mean()
+        # KL 散度越大 表示两个分布的差异越大
+    else:
+        raise ValueError("Invalid loss type: {}".format(LOSS))
+    return total_loss
+
+def adj_supervision(
+        ori_vision_x,
+        noise_start,
+):
+    denormed_vision_x = denormalize(ori_vision_x, mean=image_mean, std=image_std)[0, 0, :]
+    # print(denormed_vision_x.shape)  # torch.Size([1, 3, 336, 336])
+    noisy_vision_x = denormed_vision_x.cuda()
+    noisy_vision_x = noisy_vision_x + noise_start.cuda()
+    # print(noisy_vision_x.shape) # torch.Size([1, 3, 336, 336])
+    normed_noisy_vision_x = normalize(noisy_vision_x, mean=image_mean, std=image_std)
+    resize_to_224 = transforms.Resize((224, 224), interpolation=InterpolationMode.BICUBIC, max_size=None)
+    # 定义目标文本和其他文本
+    texts = ["Stable", "Cautious", "Keeping Safe Distance", "Obeying Signals", "Paying Attention",
+             "Aggressive", "Reckless", "Tailgating", "Running Red Lights", "Distracted Driving"]
+    text_tokens = clip.tokenize(texts).cuda()
+    logits_per_image, _ = model_clip(resize_to_224(normed_noisy_vision_x), text_tokens)
+    logits_per_image = torch.softmax(logits_per_image, dim=-1)
+    target_labels = torch.full(logits_per_image.shape, -1).cuda()   # 初始值为-1以抑制非目标类别
+    target_labels[:, len(texts)//2 : ] = 1
+    mask = target_labels != -1
+    # 最大化target label 同时抑制其他label
+    bs = logits_per_image.shape[0]
+    loss = -torch.log(1e-8 + logits_per_image[mask].view(bs, -1)).mean(dim=-1, keepdim=True) + torch.log(1e-8 + logits_per_image[~mask].view(bs, -1)).mean(dim=-1, keepdim=True)
+    loss = loss.mean(dim=0)
+    return loss
+
 def apply_transform_and_generate_mask(patch, target_size):
     """应用随机仿射变换并生成掩码，放置在图像上方 30% 处的中心位置。
     参数：
@@ -183,7 +316,7 @@ def apply_transform_and_generate_mask(patch, target_size):
     )
     transform_with_probability = transforms.RandomApply(
         [random_affine],    # 要应用的变换列表
-        p=0.4               # 应用变换的概率
+        p=0.1               # 应用变换的概率
     )
 
     # 计算填充以将补丁放置在目标位置
@@ -218,16 +351,36 @@ def coi_attack_stage2(
             patch_start.requires_grad = True
             text_features = model_clip.encode_text(clip.tokenize(texts).cuda())
             # print(text_features.shape)  # torch.Size([16, 512])
+            if args.sup_text:
+                loss_text = text_supervision(
+                ori_vision_x=ori_vision_x,
+                patch_start=patch_start,
+                text_features=text_features,
+            )
+                # print(loss_text)
+                total_loss = total_loss + loss_text
+            if args.sup_clean:
+                loss_clean = clean_supervision(
+                    ori_vision_x=ori_vision_x,
+                    patch_start=patch_start,
+                )
+                # print(0.02 * loss_clean)
+                total_loss = total_loss + loss_clean
+            if args.sup_adj:
+                loss_adj = adj_supervision(
+                    ori_vision_x=ori_vision_x,
+                    noise_start=patch_start,
+                )
+                # print(0.02 * loss_clean)
+                total_loss = total_loss + 0.05 * loss_adj
+
+            
             denormed_vision_x = denormalize(ori_vision_x, mean=image_mean, std=image_std)[0, 0, :].cuda()
             # 生成与图像同尺寸的变换补丁和掩码
             input_image_size = denormed_vision_x.shape[2:]  # 输入图像目标尺寸
             transformed_patch, transformed_mask = apply_transform_and_generate_mask(patch_start, input_image_size)
             # 将补丁放置到图像的指定位置，仅覆盖非空白部分
             denormed_vision_x = denormed_vision_x * (1 - transformed_mask.cuda()) + transformed_patch.cuda() * transformed_mask.cuda()
-            # from torchvision.utils import save_image
-            # save_image(transformed_patch.detach(), f"p.png")
-            # save_image((transformed_patch * transformed_mask).detach(), "m.png")
-            # quit()
             normed_noisy_vision_x = normalize(denormed_vision_x, mean=image_mean, std=image_std)
             image_features = model_clip.encode_image(resize_to_224(normed_noisy_vision_x))
             # print(image_features.shape) # torch.Size([16, 512])
@@ -251,6 +404,7 @@ def coi_attack_stage2(
                 total_loss = kl_divergence_per_sample.mean()
             else:
                 raise ValueError("Invalid loss type: {}".format(LOSS))
+            
             optimizer.zero_grad()
             total_loss.backward()
             optimizer.step()
@@ -322,6 +476,10 @@ if __name__ == "__main__":
     parser.add_argument('--iter', type=int, default=20)
     parser.add_argument('--query', type=int, default=8)
     parser.add_argument('--loss', type=str, default='cos', choices=['cos', 'kl'])
+    parser.add_argument('--sup-clean', action='store_true')
+    parser.add_argument('--sup-text', action='store_true')
+    parser.add_argument('--sup-3p', action='store_true')
+    parser.add_argument('--sup-adj', action='store_true')
     args = parser.parse_args()
     EPS = args.eps
     ITER = args.iter
@@ -338,7 +496,16 @@ if __name__ == "__main__":
         best_records = json.load(file)
 
     ok_unique_id = []
-    folder = f'results/bench_attack_coi-opti-judge-offline-{LOSS}-patchall_eps{EPS}_iter{ITER}_query{QUERY}'
+    iii = ''
+    if args.sup_text:
+        iii += '-text'
+    if args.sup_3p:
+        iii += '-3p'
+    if args.sup_clean:
+        iii += '-clean'
+    if args.sup_adj:
+        iii += '-adj'
+    folder = f'results/bench_attack_coi-opti-judge-offline-{LOSS}-patchall-i2{iii}_eps{EPS}_iter{ITER}_query{QUERY}'
     os.makedirs(folder, exist_ok=True)
     json_path = os.path.join(folder, 'dolphin_output.json')
     if os.path.exists(json_path):
