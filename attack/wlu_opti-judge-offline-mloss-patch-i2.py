@@ -331,7 +331,7 @@ if __name__ == "__main__":
     QUERY = args.query
     LOSS = args.loss
     # patch 超参数
-    patch_ratio = 0.17  # 补丁相对图像大小的比例
+    patch_ratio = 0.25  # 补丁相对图像大小的比例
     pos_x = 0.5
     pos_y = 0.3
     
@@ -341,7 +341,7 @@ if __name__ == "__main__":
         best_records = json.load(file)
 
     ok_unique_id = []
-    folder = f'results/bench_attack_coi-opti-judge-offline-{LOSS}-patch_eps{EPS}_iter{ITER}_query{QUERY}'
+    folder = f'results/bench_attack_coi-opti-judge-offline-{LOSS}-patch-i1_eps{EPS}_iter{ITER}_query{QUERY}'
     os.makedirs(folder, exist_ok=True)
     json_path = os.path.join(folder, 'dolphin_output.json')
     if os.path.exists(json_path):
