@@ -282,6 +282,8 @@ def coi_attack_stage1(
         final_input_vision_x = ori_vision_x.clone()
         transformed_patch, transformed_mask = apply_transform_and_generate_mask(adversarial_patch, input_image_size)
         final_input_vision_x[0, 0, :] = final_input_vision_x[0, 0, :] * (1 - transformed_mask) + transformed_patch * transformed_mask
+        from torchvision.utils import save_image
+        save_image(final_input_vision_x[0, 0, 0], 'tmp.png')
         final_answer = inference(
             input_vision_x=final_input_vision_x.half().cuda(),
             inputs=ori_inputs

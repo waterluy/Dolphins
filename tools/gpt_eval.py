@@ -10,7 +10,7 @@ import requests
 import csv
 
 class GPTEvaluation:
-    def __init__(self):
+    def __init__(self, gpt):
         with open("tools/api.json", 'r') as file:
             data = json.load(file)["eval"]
         self.api_key = data['api_key']
@@ -19,10 +19,11 @@ class GPTEvaluation:
             'Content-Type': 'application/json',
             'Authorization': f'Bearer {self.api_key}'
         }
+        self.gpt_model = gpt
 
-    def call_chatgpt(self, chatgpt_messages, max_tokens=40, model='gpt-4o-all'):    # gpt-3.5-turbo-0613 gpt-4o-all
+    def call_chatgpt(self, chatgpt_messages, max_tokens=40):    # gpt-3.5-turbo-0613 gpt-4o-all
         data = {
-            "model": model,
+            "model": self.gpt_model,
             "messages": chatgpt_messages,
         }
         response = requests.post(self.url, headers=self.headers, json=data)
@@ -51,7 +52,7 @@ class GPTEvaluation:
 
         return output
     
-    def forward(self, answer, GT) -> int:
+    def forward(self, answer, GT):
         success = False
         if answer == '':
             return 0
@@ -60,11 +61,12 @@ class GPTEvaluation:
             try:
                 score = self.GPT_eval(answer=answer, GT=GT)
                 int_score = int(score)
+                assert (int_score >= 0) and (int_score <= 100)  # !!!!!!!
             except Exception as e:
                 print(e, score)
                 success = False
             else:
-                print("Success: ", int_score)
+                # print("Success: ", int_score)
                 success = True
 
         return int_score
@@ -73,11 +75,12 @@ class GPTEvaluation:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='GPT Evaluation')
     parser.add_argument('--json-path', type=str, default='results/dolphins_benchmark_attack_online_gpt_target_0.json', help='path to the data')
+    parser.add_argument('--gpt', type=str, default='gpt-4o-all')
     args = parser.parse_args()
 
     data = []
     scores = []
-    eval = GPTEvaluation()
+    eval = GPTEvaluation(gpt=args.gpt)
     
     with open(args.json_path, mode='r', newline='', encoding='utf-8') as file:
         lines = [line for line in file]
