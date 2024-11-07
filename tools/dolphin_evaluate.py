@@ -166,8 +166,8 @@ if __name__ == '__main__':
     task_scores = defaultdict(list)
 
     assert 'dolphin_output.json' in result_file
-    fp = open(result_file.replace('dolphin_output.json', 'eval_log_new.txt'), "w")
-    fp_gpt = open(result_file.replace('dolphin_output.json', 'eval_gpt_new.json'), "w")
+    fp = open(result_file.replace('dolphin_output.json', 'eval_log.txt'), "w")
+    fp_gpt = open(result_file.replace('dolphin_output.json', 'eval_gpt.json'), "w")
     
     with open(benchmark_file, "r") as f:
         dolphins_bench = json.load(f) 
@@ -234,10 +234,10 @@ if __name__ == '__main__':
         
         task_instance_num[task_name] = len(list(gts.keys()))
         assert len(preds.keys()) == len(gts.keys())
-        # language_score = evaluation.eval_language(preds, gts)
+        language_score = evaluation.eval_language(preds, gts)
       
-        # print("language: ", language_score)
-        # fp.write("language: "+str(language_score)+"\n")
+        print("language: ", language_score)
+        fp.write("language: "+str(language_score)+"\n")
         if len(output["accuracy"]) != 0:
             output["accuracy"] = sum(output["accuracy"]) / len(output["accuracy"])
             print("accuracy: ", output["accuracy"])
@@ -252,21 +252,20 @@ if __name__ == '__main__':
             output["chatgpt"] = 0.0
         
         scores = []
-        # weights = [0.4, 0.4, 0.2]
-        weights = [0.1, 0.9]
+        weights = [0.4, 0.4, 0.2]
         
         # chatGPT
         score = output["chatgpt"]
         scores.append(score)
 
         # language
-        # score = 0
-        # for idx, key in enumerate(language_score.keys()):
-        #     if idx < 4:
-        #         score += language_score[key] / 4. / 3.
-        #     else:
-        #         score += language_score[key] / 3. 
-        # scores.append(score)
+        score = 0
+        for idx, key in enumerate(language_score.keys()):
+            if idx < 4:
+                score += language_score[key] / 4. / 3.
+            else:
+                score += language_score[key] / 3. 
+        scores.append(score)
         
         # accuracy
         score = output["accuracy"]
@@ -299,7 +298,7 @@ if __name__ == '__main__':
         task_num += 1
     csv_data["avg"] = score_sum / task_num
 
-    csv_path = result_file.replace('dolphin_output.json', 'bench_score_new.csv')
+    csv_path = result_file.replace('dolphin_output.json', 'bench_score.csv')
     with open(csv_path, 'w', newline='') as csv_file:
         writer = csv.DictWriter(csv_file, fieldnames=csv_headers)
         writer.writeheader()

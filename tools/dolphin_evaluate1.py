@@ -248,8 +248,7 @@ if __name__ == '__main__':
             output["chatgpt"] = 0.0
         
         scores = []
-        weights = [0.2, 0.4, 0.4]
-        # weights = [0, 1]
+        weights = [0.3, 0.3, 0.4]
         
         # chatGPT
         score = output["chatgpt"]
