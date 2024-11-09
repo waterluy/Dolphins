@@ -1,4 +1,6 @@
 import json
+import sys
+sys.path.append('.')
 import csv
 import random
 

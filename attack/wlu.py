@@ -269,6 +269,7 @@ if __name__ == "__main__":
     tokenizer.pad_token_id = 50277
     device = model.device
     model_clip, preprocess_clip = clip.load("ViT-B/32", device=torch.device('cuda')) 
+    model_clip.eval()
 
     generation_kwargs = {'max_new_tokens': 512, 'temperature': 1,
                                 'top_k': 0, 'top_p': 1, 'no_repeat_ngram_size': 3, 'length_penalty': 1,

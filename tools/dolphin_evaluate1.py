@@ -130,12 +130,10 @@ class Evaluation():
         }
         return results_gen_dict
 
-    def forward(self, unique_id, answer, GT, label=None, fp=None):
+    def forward(self, unique_id, answer, GT, label=None):
         scores = {}
         # if label is not None and unique_id in self.chatgpt_scores.keys():
-        scores["chatgpt"] = self.eval_chatGPT(unique_id, answer, GT) / 100
-        if fp is not None:
-            fp.write(json.dumps({unique_id: scores["chatgpt"]}) + "\n")
+        scores["chatgpt"] = self.chatgpt_scores[unique_id]
         if label is not None:
             scores["accuracy"] = self.eval_acc(unique_id, answer, label)
         else:
@@ -159,16 +157,15 @@ if __name__ == '__main__':
     parser.add_argument('--gpt', type=str, default='gpt-4o-all')
     args = parser.parse_args()
     benchmark_file = "./playground/dolphins_bench/dolphins_benchmark.json"
-    chatgpt_score_file = "playground/dolphins_bench/results/dolphins/dolphins_scores.json"
     result_file =  args.exp
     
     task_num = defaultdict(lambda: 0)
     task_scores = defaultdict(list)
 
     assert 'dolphin_output.json' in result_file
-    fp = open(result_file.replace('dolphin_output.json', 'eval_log.txt'), "w")
-    fp_gpt = open(result_file.replace('dolphin_output.json', 'eval_gpt.json'), "w")
-    
+    fp = open(result_file.replace('dolphin_output.json', 'eval_log_new.txt'), "w")
+    chatgpt_score_file = result_file.replace('dolphin_output.json', 'eval_gpt_new.json')
+
     with open(benchmark_file, "r") as f:
         dolphins_bench = json.load(f) 
         dolphins_bench = [line for line in dolphins_bench]
@@ -188,11 +185,10 @@ if __name__ == '__main__':
     print(len(results))
     fp.write(str(len(results)) + "\n")
    
-    # with open(chatgpt_score_file, "r") as f:
-    #     chatgpt_scores = [json.loads(line) for line in f.readlines()]
-    #     chatgpt_scores = {line['unique_id']: float(line['scores'].split("\n")[0].strip(" ")) for line in chatgpt_scores}
-    chatgpt_scores = None
-    
+    with open(chatgpt_score_file, "r") as f:
+        chatgpt_scores = [json.loads(line) for line in f.readlines()]
+        chatgpt_scores = {str(list(item.keys())[0]): float(list(item.values())[0]) for item in chatgpt_scores}
+
     evaluation = Evaluation(gpt=args.gpt, chatgpt_scores=chatgpt_scores)
     outputs = defaultdict(lambda: {"accuracy": [], "chatgpt": [], "language": []})
     cnt = 0
@@ -208,7 +204,7 @@ if __name__ == '__main__':
         except:
             label = None
         
-        res = evaluation.forward(unique_id, pred, gt, label, fp=fp_gpt) 
+        res = evaluation.forward(unique_id, pred, gt, label) 
         for key in outputs[task_name].keys():
             if key in res:
                 outputs[task_name][key].append(res[key])
@@ -252,7 +248,7 @@ if __name__ == '__main__':
             output["chatgpt"] = 0.0
         
         scores = []
-        weights = [0.4, 0.4, 0.2]
+        weights = [0.3, 0.3, 0.4]
         
         # chatGPT
         score = output["chatgpt"]
@@ -297,9 +293,8 @@ if __name__ == '__main__':
         score_sum += weighted_average
         task_num += 1
     csv_data["avg"] = score_sum / task_num
-    print(f"avg: {score_sum / task_num}\n")
 
-    csv_path = result_file.replace('dolphin_output.json', 'bench_score.csv')
+    csv_path = result_file.replace('dolphin_output.json', 'bench_score_new.csv')
     with open(csv_path, 'w', newline='') as csv_file:
         writer = csv.DictWriter(csv_file, fieldnames=csv_headers)
         writer.writeheader()
