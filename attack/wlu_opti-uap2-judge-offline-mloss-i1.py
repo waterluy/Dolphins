@@ -441,6 +441,7 @@ if __name__ == "__main__":
         best_records = json.load(file)
 
     model_clip, preprocess_clip = clip.load("ViT-B/32", device=torch.device('cuda')) 
+    model_clip.eval()
 
     ok_unique_id = []
     iii = ''

@@ -267,6 +267,7 @@ if __name__ == "__main__":
     EPS = args.eps
     ITER = args.iter
     QUERY = args.query
+    model_clip.eval()
 
     ok_unique_id = []
     folder = f'results/bench_attack_coi-opti-uap_eps{EPS}_iter{ITER}_query{QUERY}'
