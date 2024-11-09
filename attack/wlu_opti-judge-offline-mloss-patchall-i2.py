@@ -284,17 +284,22 @@ def adj_supervision(
     normed_noisy_vision_x = normalize(denormed_vision_x, mean=image_mean, std=image_std)
     resize_to_224 = transforms.Resize((224, 224), interpolation=InterpolationMode.BICUBIC, max_size=None)
     # 定义目标文本和其他文本
-    texts = ["Stable", "Cautious", "Keeping Safe Distance", "Obeying Signals", "Paying Attention",
-             "Aggressive", "Reckless", "Tailgating", "Running Red Lights", "Distracted Driving"]
+    texts = ["A safe driving scenario.", "A dangerous driving scenario."]
     text_tokens = clip.tokenize(texts).cuda()
-    logits_per_image, _ = model_clip(resize_to_224(normed_noisy_vision_x), text_tokens)
-    logits_per_image = torch.softmax(logits_per_image, dim=-1)
-    target_labels = torch.full(logits_per_image.shape, -1).cuda()   # 初始值为-1以抑制非目标类别
-    target_labels[:, len(texts)//2 : ] = 1
-    mask = target_labels != -1
+    adv_logits_per_image, _ = model_clip(resize_to_224(normed_noisy_vision_x), text_tokens)
+    adv_logits_per_image = torch.softmax(adv_logits_per_image, dim=-1)  # 1, 2
+    clean_logits_per_image, _ = model_clip(resize_to_224(ori_vision_x[0, 0, :]).cuda())
+    clean_logits_per_image = torch.softmax(clean_logits_per_image, dim=-1)  # 1, 2
+
+    target_labels = torch.full(adv_logits_per_image.shape, -1).cuda()   # 初始值为-1以抑制非目标类别
+    # 找到 clean_logits_per_image 中较小元素的索引
+    min_index = torch.argmin(clean_logits_per_image, dim=-1)  # 返回形状 [1] 的张量，表示较小元素的位置
+    # 将 target_labels 中较小元素的位置设为 1
+    target_labels[torch.arange(target_labels.shape[0]), min_index] = 1
+    mask = target_labels == 1
     # 最大化target label 同时抑制其他label
-    bs = logits_per_image.shape[0]
-    loss = -torch.log(1e-8 + logits_per_image[mask].view(bs, -1)).mean(dim=-1, keepdim=True) + torch.log(1e-8 + logits_per_image[~mask].view(bs, -1)).mean(dim=-1, keepdim=True)
+    bs = adv_logits_per_image.shape[0]
+    loss = -torch.log(1e-8 + adv_logits_per_image[mask].view(bs, -1)).mean(dim=-1, keepdim=True) + torch.log(1e-8 + adv_logits_per_image[~mask].view(bs, -1)).mean(dim=-1, keepdim=True)
     loss = loss.mean(dim=0)
     return loss
 
@@ -346,70 +351,38 @@ def coi_attack_stage2(
         ori_vision_x,
 ):    
     texts = [induction_text for _ in range(vision_x.shape[2])]
-    resize_to_224 = transforms.Resize((224, 224))
     for _ in range(ITER):
-            total_loss = 0
-            patch_start.requires_grad = True
-            text_features = model_clip.encode_text(clip.tokenize(texts).cuda())
-            # print(text_features.shape)  # torch.Size([16, 512])
-            if args.sup_text:
-                loss_text = text_supervision(
+        total_loss = 0
+        patch_start.requires_grad = True
+        text_features = model_clip.encode_text(clip.tokenize(texts).cuda())
+        # print(text_features.shape)  # torch.Size([16, 512])
+        if args.sup_text:
+            loss_text = text_supervision(
+            ori_vision_x=ori_vision_x,
+            patch_start=patch_start,
+            text_features=text_features,
+        )
+            # print(loss_text)
+            total_loss = total_loss + loss_text
+        if args.sup_clean:
+            loss_clean = clean_supervision(
                 ori_vision_x=ori_vision_x,
                 patch_start=patch_start,
-                text_features=text_features,
             )
-                # print(loss_text)
-                total_loss = total_loss + loss_text
-            if args.sup_clean:
-                loss_clean = clean_supervision(
-                    ori_vision_x=ori_vision_x,
-                    patch_start=patch_start,
-                )
-                # print(0.02 * loss_clean)
-                total_loss = total_loss + loss_clean
-            if args.sup_adj:
-                loss_adj = adj_supervision(
-                    ori_vision_x=ori_vision_x,
-                    patch_start=patch_start,
-                )
-                # print(0.02 * loss_clean)
-                total_loss = total_loss + 0.05 * loss_adj
-
-            
-            denormed_vision_x = denormalize(ori_vision_x, mean=image_mean, std=image_std)[0, 0, :].cuda()
-            # 生成与图像同尺寸的变换补丁和掩码
-            input_image_size = denormed_vision_x.shape[2:]  # 输入图像目标尺寸
-            transformed_patch, transformed_mask = apply_transform_and_generate_mask(patch_start, input_image_size)
-            # 将补丁放置到图像的指定位置，仅覆盖非空白部分
-            denormed_vision_x = denormed_vision_x * (1 - transformed_mask.cuda()) + transformed_patch.cuda() * transformed_mask.cuda()
-            normed_noisy_vision_x = normalize(denormed_vision_x, mean=image_mean, std=image_std)
-            image_features = model_clip.encode_image(resize_to_224(normed_noisy_vision_x))
-            # print(image_features.shape) # torch.Size([16, 512])
-            if LOSS == 'cos':
-                text_features_normed = F.normalize(text_features, dim=-1)
-                # print(text_features_normed.shape)   # torch.Size([16, 512])
-                image_features_normed = F.normalize(image_features, dim=-1)
-                # print(image_features_normed.shape)  # torch.Size([16, 512])
-                total_loss = - torch.cosine_similarity(image_features_normed, text_features_normed, dim=1, eps=1e-8)
-                # print(total_loss.shape) # torch.Size([16])
-                total_loss = total_loss.mean()
-                # print(total_loss, total_loss.shape) 
-            elif LOSS == 'kl':
-                # 将两个嵌入特征转换为概率分布, text的特征指导image的特征
-                text_prob = F.softmax(text_features, dim=-1)       # 文本特征的概率分布
-                image_log_prob = F.log_softmax(image_features, dim=-1)  # 图像特征的对数概率分布
-                # 计算 KL 散度
-                kl_divergence = F.kl_div(image_log_prob, text_prob, reduction='none')
-                # 对 dim 维度求和，得到每个样本的 KL 散度，形状为 [batch_size]
-                kl_divergence_per_sample = kl_divergence.sum(dim=-1)
-                total_loss = kl_divergence_per_sample.mean()
-            else:
-                raise ValueError("Invalid loss type: {}".format(LOSS))
-            
-            optimizer.zero_grad()
-            total_loss.backward()
-            optimizer.step()
-            patch_start = torch.clamp(patch_start.detach(), 0, 1)
+            # print(0.02 * loss_clean)
+            total_loss = total_loss + loss_clean
+        if args.sup_adj:
+            loss_adj = adj_supervision(
+                ori_vision_x=ori_vision_x,
+                patch_start=patch_start,
+            )
+            # print(0.02 * loss_clean)
+            total_loss = total_loss + 0.05 * loss_adj
+        
+        optimizer.zero_grad()
+        total_loss.backward()
+        optimizer.step()
+        patch_start = torch.clamp(patch_start.detach(), 0, 1)
 
     return patch_start.detach()
 
@@ -421,7 +394,7 @@ def coi_attack_stage1(
     batch_size, c, h, w = ori_vision_x.shape[2:]  # 获取输入图像的高和宽
     patch_size = (int(h * patch_ratio), int(w * patch_ratio))  # 计算补丁大小
     input_image_size = ori_vision_x.shape[4:]  # 输入图像目标尺寸
-    # 初始化通用对抗补丁
+    # 初始化对抗补丁
     adversarial_patch = torch.rand((batch_size, c, *patch_size), requires_grad=True)
     answers = []
     

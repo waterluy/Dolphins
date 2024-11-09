@@ -297,6 +297,7 @@ if __name__ == '__main__':
         score_sum += weighted_average
         task_num += 1
     csv_data["avg"] = score_sum / task_num
+    print(f"avg: {score_sum / task_num}\n")
 
     csv_path = result_file.replace('dolphin_output.json', 'bench_score.csv')
     with open(csv_path, 'w', newline='') as csv_file:

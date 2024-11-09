@@ -282,17 +282,22 @@ def adj_supervision(
     normed_noisy_vision_x = normalize(noisy_vision_x, mean=image_mean, std=image_std)
     resize_to_224 = transforms.Resize((224, 224), interpolation=InterpolationMode.BICUBIC, max_size=None)
     # 定义目标文本和其他文本
-    texts = ["Stable", "Cautious", "Keeping Safe Distance", "Obeying Signals", "Paying Attention",
-             "Aggressive", "Reckless", "Tailgating", "Running Red Lights", "Distracted Driving"]
+    texts = ["A safe driving scenario.", "A dangerous driving scenario."]
     text_tokens = clip.tokenize(texts).cuda()
-    logits_per_image, _ = model_clip(resize_to_224(normed_noisy_vision_x), text_tokens)
-    logits_per_image = torch.softmax(logits_per_image, dim=-1)
-    target_labels = torch.full(logits_per_image.shape, -1).cuda()   # 初始值为-1以抑制非目标类别
-    target_labels[:, len(texts)//2 : ] = 1
-    mask = target_labels != -1
+    adv_logits_per_image, _ = model_clip(resize_to_224(normed_noisy_vision_x), text_tokens)
+    adv_logits_per_image = torch.softmax(adv_logits_per_image, dim=-1)  # 1, 2
+    clean_logits_per_image, _ = model_clip(resize_to_224(ori_vision_x[0, 0, :]).cuda())
+    clean_logits_per_image = torch.softmax(clean_logits_per_image, dim=-1)  # 1, 2
+
+    target_labels = torch.full(adv_logits_per_image.shape, -1).cuda()   # 初始值为-1以抑制非目标类别
+    # 找到 clean_logits_per_image 中较小元素的索引
+    min_index = torch.argmin(clean_logits_per_image, dim=-1)  # 返回形状 [1] 的张量，表示较小元素的位置
+    # 将 target_labels 中较小元素的位置设为 1
+    target_labels[torch.arange(target_labels.shape[0]), min_index] = 1
+    mask = target_labels == 1
     # 最大化target label 同时抑制其他label
-    bs = logits_per_image.shape[0]
-    loss = -torch.log(1e-8 + logits_per_image[mask].view(bs, -1)).mean(dim=-1, keepdim=True) + torch.log(1e-8 + logits_per_image[~mask].view(bs, -1)).mean(dim=-1, keepdim=True)
+    bs = adv_logits_per_image.shape[0]
+    loss = -torch.log(1e-8 + adv_logits_per_image[mask].view(bs, -1)).mean(dim=-1, keepdim=True) + torch.log(1e-8 + adv_logits_per_image[~mask].view(bs, -1)).mean(dim=-1, keepdim=True)
     loss = loss.mean(dim=0)
     return loss
 
@@ -334,7 +339,7 @@ def coi_attack_stage2(
                     noise_start=noise_start,
                     b_idx=b,
                 )
-                # print(0.02 * loss_clean)
+                # print(0.02 * loss_adj)
                 total_loss = total_loss + 0.05 * loss_adj
             optimizer.zero_grad()
             total_loss.backward()

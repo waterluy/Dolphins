@@ -38,7 +38,10 @@ class TextToNoiseGenerator(nn.Module):
         noise = x.view(batch_size, self.output_shape[0], self.output_shape[1], self.output_shape[2])
 
         # 将输出缩放到 [-eps, eps] 范围内
-        noise = noise * self.eps
+        if self.eps == 1:
+            noise = (noise + 1) / 2
+        else:
+            noise = noise * self.eps
 
         return noise
 
