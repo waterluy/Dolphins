@@ -289,7 +289,7 @@ def adj_supervision(
     text_tokens = clip.tokenize(texts).cuda()
     adv_logits_per_image, _ = model_clip(resize_to_224(normed_noisy_vision_x), text_tokens)
     adv_logits_per_image = torch.softmax(adv_logits_per_image, dim=-1)  # 1, 2
-    clean_logits_per_image, _ = model_clip(resize_to_224(ori_vision_x[0, 0, :]).cuda())
+    clean_logits_per_image, _ = model_clip(resize_to_224(ori_vision_x[0, 0, :]).cuda(), text_tokens)
     clean_logits_per_image = torch.softmax(clean_logits_per_image, dim=-1)  # 1, 2
 
     target_labels = torch.full(adv_logits_per_image.shape, -1).cuda()   # 初始值为-1以抑制非目标类别
@@ -409,15 +409,16 @@ def coi_attack_stage1(
     alpha = 2 * EPS / ITER
     optimizer = torch.optim.Adam(noise_generator.parameters(), lr=alpha)
     for induction_text in texts:
-        adversarial_patch = coi_attack_stage2(
-            induction_text, 
-            noise_generator=noise_generator,
-            optimizer=optimizer,
-            ori_vision_x=ori_vision_x,
-        )
+        with torch.cuda.amp.autocast():
+            adversarial_patch = coi_attack_stage2(
+                induction_text, 
+                noise_generator=noise_generator,
+                optimizer=optimizer,
+                ori_vision_x=ori_vision_x,
+            )
         final_input_vision_x = ori_vision_x.clone()
         transformed_patch, transformed_mask = apply_transform_and_generate_mask(adversarial_patch, input_image_size)
-        final_input_vision_x[0, 0, :] = final_input_vision_x[0, 0, :] * (1 - transformed_mask) + transformed_patch * transformed_mask
+        final_input_vision_x[0, 0, :] = final_input_vision_x[0, 0, :].cuda() * (1 - transformed_mask.cuda()) + transformed_patch.cuda() * transformed_mask.cuda()
         final_answer = inference(
             input_vision_x=final_input_vision_x.half().cuda(),
             inputs=ori_inputs
