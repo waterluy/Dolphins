@@ -2,7 +2,7 @@ __pycache__
 *.pyc
 *.png
 captions_BDDX_clean.json
-results
+results*
 # playground/dolphins_bench
 csvfiles/
 mllm/otter/__pycache__/*

@@ -364,6 +364,17 @@ def coi_attack_stage1(
         answers.append(final_answer)
         if final_answer == "":
             break
+    print(noise.sum())
+    import torchvision
+    torchvision.utils.save_image(
+        (noise.cuda()).detach().cpu().squeeze()[0],
+        "noise.png",
+    )
+    torchvision.utils.save_image(
+        (denormalize(ori_vision_x.clone().half().cuda(), mean=image_mean, std=image_std) + noise.cuda()).detach().cpu().squeeze()[0],
+        "noisy.png",
+    )
+    quit()
     return noise.detach(), answers
 
 

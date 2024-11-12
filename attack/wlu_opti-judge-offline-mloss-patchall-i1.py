@@ -488,7 +488,7 @@ if __name__ == "__main__":
         iii += '-clean'
     if args.sup_adj:
         iii += '-adj'
-    folder = f'results/bench_attack_coi-opti-judge-offline-{LOSS}-patchall-i2{iii}_eps{EPS}_iter{ITER}_query{QUERY}'
+    folder = f'results/bench_attack_coi-opti-judge-offline-{LOSS}-patchall-i1{iii}_eps{EPS}_iter{ITER}_query{QUERY}'
     os.makedirs(folder, exist_ok=True)
     json_path = os.path.join(folder, 'dolphin_output.json')
     if os.path.exists(json_path):

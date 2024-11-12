@@ -225,11 +225,11 @@ image_std = [0.26862954, 0.26130258, 0.27577711]
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--eps', type=float, default=0.1)
-    parser.add_argument('--steps', type=int, default=10)
+    parser.add_argument('--steps', type=int, default=50)
     parser.add_argument('--lp', type=str, default='linf', choices=['l1', 'l2', 'linf'])
     parser.add_argument('--dire', type=str, default='pos', choices=['pos', 'neg'])
     parser.add_argument('--samples', type=int, default=10)
-    parser.add_argument('--method', type=int,  choices=[0, 2, 3, 4])
+    parser.add_argument('--method', type=int, default=4, choices=[0, 2, 3, 4])
     parser.add_argument('--affine', action='store_true')
     parser.add_argument('--output', type=str, default='./results')
     args = parser.parse_args()
@@ -268,7 +268,7 @@ if __name__ == "__main__":
                     multi_version_instructions = conversation['value']['multi_version']
                 elif conversation['from'] == 'gpt':
                     ground_truth = conversation['value']
-            if instruction == '':
+            if unique_id != 'weather_4_testing_24f43441-d9d62b52_24021':
                 continue
 
             tokenizer.eos_token_id = 50277
@@ -280,6 +280,10 @@ if __name__ == "__main__":
             input_ids_list, attention_mask_list, labels_list = get_model_inputs_prompts_for_loss(instructions=multi_version_instructions, target=ground_truth, model=model, tokenizer=tokenizer)
 
             noise = exr_attack(model=model, vision_x=images, input_ids_list=input_ids_list, attention_mask_list=attention_mask_list, labels_list=labels_list, epsilon=args.eps, steps=args.steps, lp=args.lp, dire=args.dire)
+            from torchvision.utils import save_image
+            save_image(denormalize((images.cpu() + noise.cpu()).squeeze()[0], mean=image_mean, std=image_std), f'1.png')
+            save_image(noise.float().cpu().squeeze()[0], '3.png')
+            save_image(denormalize(images.cpu().squeeze()[0], mean=image_mean, std=image_std), f'2.png')
             
             # inference
             inputs = get_model_inputs_prompts(instruction=instruction, model=model, tokenizer=tokenizer)

@@ -39,6 +39,7 @@ from torchvision import transforms
 from tools.gpt_coi import GPT
 from tools.gpt_eval import GPTEvaluation
 from tqdm import tqdm
+import torchvision
 
 def setup_seed(seed):
     torch.manual_seed(seed)
@@ -195,6 +196,7 @@ def coi_attack_stage2(
         optimizer.zero_grad()
         total_loss.backward()
         optimizer.step()
+        # noise_start = noise_start - 0.02 * noise_start.grad.sign()
         noise_start = torch.clamp(noise_start.detach(), -EPS, EPS)
 
     return noise_start.detach()
@@ -210,13 +212,24 @@ def coi_attack_stage1(
     alpha = 2 * EPS / ITER
     optimizer = torch.optim.Adam([noise], lr=alpha)
     ori_answer = None
-    for induction_text in texts:
+    for i, induction_text in enumerate(texts):
         noise = coi_attack_stage2(
             induction_text, 
             noise_start=noise,
             optimizer=optimizer,
             ori_vision_x=ori_vision_x
         )
+        # print(noise.sum())
+        # if i == 7:
+        #     torchvision.utils.save_image(
+        #         (noise.cuda()).detach().cpu().squeeze()[0],
+        #         "noise.png",
+        #     )
+        #     torchvision.utils.save_image(
+        #         (denormalize(ori_vision_x.clone().half().cuda(), mean=image_mean, std=image_std) + noise.cuda()).detach().cpu().squeeze()[0],
+        #         "noisy.png",
+        #     )
+        #     quit()
         final_answer = inference(
             input_vision_x=ori_vision_x.clone().half().cuda() + noise.cuda(), 
             inputs=ori_inputs
