@@ -208,7 +208,9 @@ def coi_attack_stage1(
     mp4_url = "https://github.com/waterluy/Dolphins/blob/wlu-main/{}".format(video_path)
     ad_3p_stage = get_ad_3p(task)
     last_answers={'PREVIOUS': None, 'CURRENT': None}
-    noise = torch.zeros_like(ori_vision_x[0, 0, 0:1, :], requires_grad=True)
+    noise = 2 * torch.rand_like(ori_vision_x[0, 0, 0:1, :]) - 1
+    noise = noise * EPS
+    noise.requires_grad = True
     texts = []
     answers = []
 
@@ -225,8 +227,12 @@ def coi_attack_stage1(
         )
         # 多帧图对应同一个通用的noise
         final_noise = torch.cat([noise] * ori_vision_x.shape[2])
+        final_input = ori_vision_x.clone()
+        final_input = denormalize(final_input, mean=image_mean, std=image_std)
+        final_input = final_input + final_noise.to(final_input.device)
+        final_input = normalize(final_input, mean=image_mean, std=image_std)
         final_answer = inference(
-            input_vision_x=ori_vision_x.clone().half().cuda() + final_noise.cuda(), 
+            input_vision_x=final_input.half().cuda(), 
             inputs=ori_inputs
         )
         answers.append(final_answer)

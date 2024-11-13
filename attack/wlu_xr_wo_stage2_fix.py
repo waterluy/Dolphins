@@ -153,7 +153,9 @@ def just_attack(
     denormed_vision_x = denormalize(vision_x, mean=image_mean, std=image_std)[0, 0, :]
     alpha = 2 * EPS / ITER
     resize_to_224 = transforms.Resize((224, 224))
-    noise_start = torch.zeros_like(ori_vision_x[0, 0, :], requires_grad=True)
+    noise = 2 * torch.rand_like(ori_vision_x[0, 0, :]) - 1
+    noise = noise * EPS
+    noise.requires_grad = True
 
     for _ in range(ITER):
         total_loss = 0
@@ -251,8 +253,11 @@ if __name__ == "__main__":
             noise = just_attack(ori_vision_x=vision_x)
 
             # inference  !!!!!记得加noise
+            final_input = denormalize(vision_x.clone(), mean=image_mean, std=image_std)
+            final_input = final_input + noise.to(final_input.device)
+            final_input = normalize(final_input, mean=image_mean, std=image_std)
             final_answer = inference(
-                input_vision_x=vision_x.half().cuda()+noise.cuda(),
+                input_vision_x=final_input,
                 inputs=inputs,
             )
 

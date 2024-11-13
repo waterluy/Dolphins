@@ -206,7 +206,9 @@ def coi_attack_stage1(
         ori_inputs,
         texts,
 ):
-    noise = torch.zeros_like(ori_vision_x[0, 0, :], requires_grad=True)
+    noise = 2 * torch.rand_like(ori_vision_x[0, 0, :]) - 1
+    noise = noise * EPS
+    noise.requires_grad = True
     answers = []
     
     alpha = 2 * EPS / ITER
@@ -230,8 +232,12 @@ def coi_attack_stage1(
         #         "noisy.png",
         #     )
         #     quit()
+        final_input = ori_vision_x.clone()
+        final_input = denormalize(final_input, mean=image_mean, std=image_std)
+        final_input = final_input + noise.to(final_input.device)
+        final_input = normalize(final_input, mean=image_mean, std=image_std)
         final_answer = inference(
-            input_vision_x=ori_vision_x.clone().half().cuda() + noise.cuda(), 
+            input_vision_x=final_input.half().cuda(), 
             inputs=ori_inputs
         )
         answers.append(final_answer)

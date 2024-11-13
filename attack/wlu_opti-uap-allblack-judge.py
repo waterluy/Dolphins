@@ -209,9 +209,10 @@ def coi_attack_stage1(
     mp4_url = "https://github.com/waterluy/Dolphins/blob/wlu-main/{}".format(video_path)
     ad_3p_stage = get_ad_3p(task)
     last_answers={'PREVIOUS': None, 'CURRENT': None}
-    noise = torch.zeros_like(ori_vision_x[0, 0, 0:1, :], requires_grad=True)
+    noise = 2 * torch.rand_like(ori_vision_x[0, 0, 0:1, :]) - 1
+    noise = noise * EPS
+    noise.requires_grad = True
     texts = []
-    answers = []
 
     alpha = 2 * EPS / ITER
     optimizer = torch.optim.Adam([noise], lr=alpha)
@@ -323,8 +324,11 @@ if __name__ == "__main__":
                 noise, induction_texts, = coi_attack_stage1(task=task_name, video_path=video_path, ori_vision_x=vision_x, instruction=instruction, ori_inputs=inputs)
 
                 # inference  !!!!!记得加noise
+                final_input = denormalize(vision_x.clone(), mean=image_mean, std=image_std)
+                final_input = final_input + noise.to(final_input.device)
+                final_input = normalize(final_input, mean=image_mean, std=image_std)
                 final_answer = inference(
-                    input_vision_x=vision_x.half().cuda()+noise.cuda(),
+                    input_vision_x=final_input.half().cuda(),
                     inputs=inputs,
                 )
 

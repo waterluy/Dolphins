@@ -37,7 +37,6 @@ import clip
 import torch.nn.functional as F
 from torchvision import transforms
 from tqdm import tqdm
-from tools.model import GeneratorFromText, TextToNoiseGenerator
 from torchvision.transforms import InterpolationMode
 
 def setup_seed(seed):
@@ -168,14 +167,13 @@ def text_supervision(
         ori_vision_x,
         noise_start,
         text_features,
-        b_idx
 ):
     resize_to_224 = transforms.Resize((224, 224), interpolation=InterpolationMode.BICUBIC, max_size=None)
-    denormed_vision_x = denormalize(ori_vision_x, mean=image_mean, std=image_std)[0, 0, b_idx:b_idx+1]
-    # print(denormed_vision_x.shape)  # torch.Size([1, 3, 336, 336])
+    denormed_vision_x = denormalize(ori_vision_x, mean=image_mean, std=image_std)[0, 0, :]
+    # print(denormed_vision_x.shape)  # torch.Size([16, 3, 336, 336])
     noisy_vision_x = denormed_vision_x.cuda()
     noisy_vision_x = noisy_vision_x + noise_start.cuda()
-    # print(noisy_vision_x.shape) # torch.Size([1, 3, 336, 336])
+    # print(noisy_vision_x.shape) # torch.Size([16, 3, 336, 336])
     normed_noisy_vision_x = normalize(noisy_vision_x, mean=image_mean, std=image_std)
     image_features = model_clip.encode_image(resize_to_224(normed_noisy_vision_x))
     if LOSS == 'cos':
@@ -205,9 +203,8 @@ def inverse3p_supervision(
         ori_vision_x,
         noise_start,
         ad_3p_stage,
-        b_idx
 ):
-    denormed_vision_x = denormalize(ori_vision_x, mean=image_mean, std=image_std)[0, 0, b_idx:b_idx+1]
+    denormed_vision_x = denormalize(ori_vision_x, mean=image_mean, std=image_std)[0, 0, :]
     # print(denormed_vision_x.shape)  # torch.Size([1, 3, 336, 336])
     noisy_vision_x = denormed_vision_x.cuda()
     noisy_vision_x = noisy_vision_x + noise_start.cuda()
@@ -236,16 +233,15 @@ def inverse3p_supervision(
 def clean_supervision(
         ori_vision_x,
         noise_start,
-        b_idx,
 ):
-    denormed_vision_x = denormalize(ori_vision_x, mean=image_mean, std=image_std)[0, 0, b_idx:b_idx+1]
+    denormed_vision_x = denormalize(ori_vision_x, mean=image_mean, std=image_std)[0, 0, :]
     # print(denormed_vision_x.shape)  # torch.Size([1, 3, 336, 336])
     noisy_vision_x = denormed_vision_x.cuda()
     noisy_vision_x = noisy_vision_x + noise_start.cuda()
     # print(noisy_vision_x.shape) # torch.Size([1, 3, 336, 336])
     normed_noisy_vision_x = normalize(noisy_vision_x, mean=image_mean, std=image_std)
     resize_to_224 = transforms.Resize((224, 224), interpolation=InterpolationMode.BICUBIC, max_size=None)
-    clean_features = model_clip.encode_image(resize_to_224(ori_vision_x[0, 0, b_idx:b_idx+1]).cuda())
+    clean_features = model_clip.encode_image(resize_to_224(ori_vision_x[0, 0, :]).cuda())
     noise_features = model_clip.encode_image(resize_to_224(normed_noisy_vision_x))
     if LOSS == 'cos':
         clean_features_normed = F.normalize(clean_features, dim=-1)
@@ -273,9 +269,8 @@ def clean_supervision(
 def adj_supervision(
         ori_vision_x,
         noise_start,
-        b_idx,
 ):
-    denormed_vision_x = denormalize(ori_vision_x, mean=image_mean, std=image_std)[0, 0, b_idx:b_idx+1]
+    denormed_vision_x = denormalize(ori_vision_x, mean=image_mean, std=image_std)[0, 0, :]
     # print(denormed_vision_x.shape)  # torch.Size([1, 3, 336, 336])
     noisy_vision_x = denormed_vision_x.cuda()
     noisy_vision_x = noisy_vision_x + noise_start.cuda()
@@ -304,91 +299,69 @@ def adj_supervision(
 
 def coi_attack_stage2(
         induction_text,
+        noise_start,
         optimizer,
         ori_vision_x,
-        noise_generator,
 ):    
-    texts = [induction_text]
+    texts = [induction_text for _ in range(ori_vision_x.shape[2])]
 
-    for _ in range(ITER):   # epoch   bs=ori_vision_x.shape[2]
-        bs = ori_vision_x.shape[2]
-        for b in range(bs):
-            total_loss = 0
-            text_features = model_clip.encode_text(clip.tokenize(texts).cuda())
-            # print(text_features.shape)  # torch.Size([1, 512])
-            noise_start = noise_generator(text_features)
-            if torch.isnan(noise_start).any():
-                print(noise_start)
-                quit()
-            # print(noise_start.shape)    # # torch.Size([1, 3, 336, 336])
-            if args.sup_text:
-                loss_text = text_supervision(
-                    ori_vision_x=ori_vision_x,
-                    noise_start=noise_start,
-                    text_features=text_features,
-                    b_idx=b,
-                )
-                # print(loss_text)
-                total_loss = total_loss + loss_text
-            if args.sup_clean:
-                loss_clean = clean_supervision(
-                    ori_vision_x=ori_vision_x,
-                    noise_start=noise_start,
-                    b_idx=b,
-                )
-                # print(0.02 * loss_clean)
-                total_loss = total_loss + loss_clean
-            if args.sup_adj:
-                loss_adj = adj_supervision(
-                    ori_vision_x=ori_vision_x,
-                    noise_start=noise_start,
-                    b_idx=b,
-                )
-                # print(0.02 * loss_adj)
-                total_loss = total_loss + 0.05 * loss_adj
-            # print(total_loss)
-            optimizer.zero_grad()
-            total_loss.backward()
-            # torch.nn.utils.clip_grad_norm_(noise_generator.parameters(), max_norm=2.0)
-            optimizer.step()
-    with torch.no_grad():
-        noise_start = noise_generator(text_features.clone())
+    for _ in range(ITER):
+        total_loss = 0
+        noise_start.requires_grad = True
+        text_features = model_clip.encode_text(clip.tokenize(texts).cuda())
+        # print(text_features.shape)  # torch.Size([16, 512])
+        if args.sup_text:
+            loss_text = text_supervision(
+                ori_vision_x=ori_vision_x,
+                noise_start=noise_start,
+                text_features=text_features,
+            )
+            # print(loss_text)
+            total_loss = total_loss + loss_text
+        if args.sup_clean:
+            loss_clean = clean_supervision(
+                ori_vision_x=ori_vision_x,
+                noise_start=noise_start,
+            )
+            # print(0.02 * loss_clean)
+            total_loss = total_loss + loss_clean
+        if args.sup_adj:
+            loss_adj = adj_supervision(
+                ori_vision_x=ori_vision_x,
+                noise_start=noise_start,
+            )
+            # print(0.02 * loss_clean)
+            total_loss = total_loss + 0.05 * loss_adj
+
+        optimizer.zero_grad()
+        total_loss.backward()
+        optimizer.step()
+        noise_start = torch.clamp(noise_start.detach(), -EPS, EPS)
+
     return noise_start.detach()
 
 def coi_attack_stage1(
         ori_vision_x,
         ori_inputs,
         texts,
-        task,
 ):
-    # noise_generator = GeneratorFromText(
-    #     text_dim=512,
-    #     output_shape=ori_vision_x.shape[3:],   # (3, 336, 336),
-    #     num_filters=[128, 64, 32],
-    #     eps=EPS,
-    # ).cuda()
-    noise_generator = TextToNoiseGenerator(
-        text_dim=512,
-        output_shape=ori_vision_x.shape[3:],
-        eps=EPS,
-    ).cuda()
+    noise = 2 * torch.rand_like(ori_vision_x[0, 0, :]) - 1
+    noise = noise * EPS
+    noise.requires_grad = True
     answers = []
-
+    
     alpha = 2 * EPS / ITER
-    optimizer = torch.optim.Adam(noise_generator.parameters(), lr=alpha)
+    optimizer = torch.optim.Adam([noise], lr=alpha)
     for induction_text in texts:
-        with torch.cuda.amp.autocast():
-            noise = coi_attack_stage2(
-                induction_text, 
-                optimizer=optimizer,
-                ori_vision_x=ori_vision_x,
-                noise_generator=noise_generator,
-            )
-        # 多帧图对应同一个通用的noise
-        final_noise = torch.cat([noise] * ori_vision_x.shape[2])
+        noise = coi_attack_stage2(
+            induction_text, 
+            noise_start=noise,
+            optimizer=optimizer,
+            ori_vision_x=ori_vision_x
+        )
         final_input = ori_vision_x.clone()
         final_input = denormalize(final_input, mean=image_mean, std=image_std)
-        final_input = final_input + final_noise.to(final_input.device)
+        final_input = final_input + noise.to(final_input.device)
         final_input = normalize(final_input, mean=image_mean, std=image_std)
         final_answer = inference(
             input_vision_x=final_input.half().cuda(), 
@@ -397,6 +370,17 @@ def coi_attack_stage1(
         answers.append(final_answer)
         if final_answer == "":
             break
+    # print(noise.sum())
+    # import torchvision
+    # torchvision.utils.save_image(
+    #     (noise.cuda()).detach().cpu().squeeze()[0],
+    #     "noise.png",
+    # )
+    # torchvision.utils.save_image(
+    #     (denormalize(ori_vision_x.clone().half().cuda(), mean=image_mean, std=image_std) + noise.cuda()).detach().cpu().squeeze()[0],
+    #     "noisy.png",
+    # )
+    # quit()
     return noise.detach(), answers
 
 
@@ -426,9 +410,9 @@ image_std = [0.26862954, 0.26130258, 0.27577711]
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='GPT Evaluation')
-    parser.add_argument('--eps', type=float, default=0.2)
-    parser.add_argument('--iter', type=int, default=20)
-    parser.add_argument('--query', type=int, default=8)
+    parser.add_argument('--eps', type=float, default=0.1)
+    parser.add_argument('--iter', type=int, default=50)
+    parser.add_argument('--query', type=int, default=10)
     parser.add_argument('--loss', type=str, default='cos', choices=['cos', 'kl'])
     parser.add_argument('--sup-clean', action='store_true')
     parser.add_argument('--sup-text', action='store_true')
@@ -444,9 +428,6 @@ if __name__ == "__main__":
     with open(best_records_path, 'r') as file:
         best_records = json.load(file)
 
-    model_clip, preprocess_clip = clip.load("ViT-B/32", device=torch.device('cuda')) 
-    model_clip.eval()
-
     ok_unique_id = []
     iii = ''
     if args.sup_text:
@@ -457,7 +438,7 @@ if __name__ == "__main__":
         iii += '-clean'
     if args.sup_adj:
         iii += '-adj'
-    folder = f'results/bench_attack_coi-opti-uap2-judge-offline-{LOSS}-i1{iii}_eps{EPS}_iter{ITER}_query{QUERY}'
+    folder = f'results/bench_attack_coi-opti-judge-offline-{LOSS}-i2{iii}_eps{EPS}_iter{ITER}_query{QUERY}'
     os.makedirs(folder, exist_ok=True)
     json_path = os.path.join(folder, 'dolphin_output.json')
     if os.path.exists(json_path):
@@ -466,12 +447,13 @@ if __name__ == "__main__":
                 ok_unique_id.append(json.loads(line)['unique_id'])
 
     induction_records = []
-    coi_records = os.path.join(folder, 'records.json')
-
+    coi_records_file = os.path.join(folder, 'records.json')
+    
     model, image_processor, tokenizer = load_pretrained_modoel()
     tokenizer.eos_token_id = 50277
     tokenizer.pad_token_id = 50277
     device = model.device
+    model_clip, preprocess_clip = clip.load("ViT-B/32", device=torch.device('cuda')) 
     model_clip.eval()
 
     generation_kwargs = {'max_new_tokens': 512, 'temperature': 1,
@@ -481,8 +463,6 @@ if __name__ == "__main__":
 
     with open('playground/dolphins_bench/dolphins_benchmark.json', 'r') as file:
         data = json.load(file)
-    # !!!!!! 追加模式记得注释掉！！！！！不要重复写入
-    target_fieldnames = ['task_name', 'video_path', 'instruction', 'ground_truth', 'target']
 
     try:
         with open(json_path, 'a') as file:
@@ -500,19 +480,18 @@ if __name__ == "__main__":
                     continue
                 
                 vision_x, inputs = get_model_inputs(video_path=video_path, instruction=instruction, model=model, image_processor=image_processor, tokenizer=tokenizer)
-
+                
                 now_dict = list(filter(lambda x: x["unique_id"] == unique_id, best_records))
                 assert len(now_dict) == 1
                 induction_texts = now_dict[0]["induction_records"]
                 if QUERY < len(induction_texts):
                     induction_texts = induction_texts[:QUERY]
                 
-                noise, induction_answers = coi_attack_stage1(ori_vision_x=vision_x, ori_inputs=inputs, texts=induction_texts, task=task_name)
+                noise, induction_answers = coi_attack_stage1(ori_vision_x=vision_x, ori_inputs=inputs, texts=induction_texts)
 
                 # inference  !!!!!记得加noise
                 final_answer = induction_answers[-1]
 
-                # 写入json行数据
                 file.write(
                     json.dumps({
                         "unique_id": unique_id,
@@ -530,5 +509,5 @@ if __name__ == "__main__":
                     "induction_answers": induction_answers,
                 })
     finally:
-        with open(coi_records, 'w') as file:
+        with open(coi_records_file, 'w') as file:
             json.dump(induction_records, file, indent=4)

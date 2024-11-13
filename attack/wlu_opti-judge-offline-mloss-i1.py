@@ -332,8 +332,12 @@ def coi_attack_stage1(
                 optimizer=optimizer,
                 ori_vision_x=ori_vision_x,
             )
+        final_input = ori_vision_x.clone()
+        final_input = denormalize(final_input, mean=image_mean, std=image_std)
+        final_input = final_input + noise.to(final_input.device)
+        final_input = normalize(final_input, mean=image_mean, std=image_std)
         final_answer = inference(
-            input_vision_x=ori_vision_x.clone().half().cuda() + noise.cuda(), 
+            input_vision_x=final_input.half().cuda(), 
             inputs=ori_inputs
         )
         answers.append(final_answer)
@@ -376,6 +380,7 @@ if __name__ == "__main__":
     parser.add_argument('--sup-text', action='store_true')
     parser.add_argument('--sup-3p', action='store_true')
     parser.add_argument('--sup-adj', action='store_true')
+    parser.add_argument('--output', type=str, default='results')
     args = parser.parse_args()
     EPS = args.eps
     ITER = args.iter
@@ -396,7 +401,7 @@ if __name__ == "__main__":
         iii += '-clean'
     if args.sup_adj:
         iii += '-adj'
-    folder = f'results/bench_attack_coi-opti-judge-offline-{LOSS}-i1{iii}_eps{EPS}_iter{ITER}_query{QUERY}'
+    folder = f'{args.output}/bench_attack_coi-opti-judge-offline-{LOSS}-i1{iii}_eps{EPS}_iter{ITER}_query{QUERY}'
     os.makedirs(folder, exist_ok=True)
     json_path = os.path.join(folder, 'dolphin_output.json')
     if os.path.exists(json_path):
