@@ -11,7 +11,7 @@ import mimetypes
 import copy
 import csv
 import random
-
+from tools.run_tools import dump_args
 import cv2
 import requests
 import torch
@@ -344,6 +344,7 @@ if __name__ == "__main__":
     ok_unique_id = []
     folder = f'results/bench_attack_coi-opti-judge-offline-{LOSS}-patchall_eps{EPS}_iter{ITER}_query{QUERY}'
     os.makedirs(folder, exist_ok=True)
+    dump_args(folder=folder, args=args)
     json_path = os.path.join(folder, 'dolphin_output.json')
     if os.path.exists(json_path):
         with open(json_path, 'r') as file:

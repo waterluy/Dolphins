@@ -11,7 +11,7 @@ import mimetypes
 import copy
 import csv
 import random
-
+from tools.run_tools import dump_args
 import cv2
 import requests
 import torch
@@ -38,6 +38,7 @@ import torch.nn.functional as F
 from torchvision import transforms
 from tqdm import tqdm
 from torchvision.transforms import InterpolationMode
+import logging
 
 def setup_seed(seed):
     torch.manual_seed(seed)
@@ -300,10 +301,11 @@ def adj_supervision(
 def coi_attack_stage2(
         induction_text,
         noise_start,
-        optimizer,
         ori_vision_x,
+        momentum
 ):    
     texts = [induction_text for _ in range(ori_vision_x.shape[2])]
+    alpha = 2 * EPS / ITER
 
     for _ in range(ITER):
         total_loss = 0
@@ -333,12 +335,24 @@ def coi_attack_stage2(
             # print(0.02 * loss_clean)
             total_loss = total_loss + 0.05 * loss_adj
 
-        optimizer.zero_grad()
+        noise_start.grad = None
         total_loss.backward()
-        optimizer.step()
-        noise_start = torch.clamp(noise_start.detach(), -EPS, EPS)
+        gradient = noise_start.grad
+        gradient_l1 = torch.norm(gradient, 1)
+        momentum = 1.0 * momentum + gradient / gradient_l1
+        noise_start = noise_start.detach() - alpha * momentum.sign()
+        noise_start = torch.clamp(noise_start, -EPS, EPS)
+        logging_str = ""
+        logging_str += f"total_loss: {total_loss.item():.4f}"
+        if args.sup_text:
+            logging_str += f" loss_text: {loss_text.item():4f}"
+        if args.sup_clean:
+            logging_str += f" loss_clean: {loss_clean.item():4f}"
+        if args.sup_adj:
+            logging_str += f" loss_adj: {loss_adj.item():4f}"
+        logging.info(logging_str)
 
-    return noise_start.detach()
+    return noise_start.detach(), momentum.detach()
 
 def coi_attack_stage1(
         ori_vision_x,
@@ -349,16 +363,16 @@ def coi_attack_stage1(
     noise = noise * EPS
     noise.requires_grad = True
     answers = []
+    momentum = 0
     
-    alpha = 2 * EPS / ITER
-    optimizer = torch.optim.Adam([noise], lr=alpha)
     for induction_text in texts:
-        noise = coi_attack_stage2(
+        noise, momentum = coi_attack_stage2(
             induction_text, 
             noise_start=noise,
-            optimizer=optimizer,
-            ori_vision_x=ori_vision_x
+            ori_vision_x=ori_vision_x,
+            momentum=momentum,
         )
+        logging.info("-------------------------------------")
         final_input = ori_vision_x.clone()
         final_input = denormalize(final_input, mean=image_mean, std=image_std)
         final_input = final_input + noise.to(final_input.device)
@@ -418,11 +432,18 @@ if __name__ == "__main__":
     parser.add_argument('--sup-text', action='store_true')
     parser.add_argument('--sup-3p', action='store_true')
     parser.add_argument('--sup-adj', action='store_true')
+    parser.add_argument('--lamb1', type=float, default=1.0)
+    parser.add_argument('--lamb2', type=float, default=1.0)
+    parser.add_argument('--lamb3', type=float, default=0.05)
+    parser.add_argument('--output', type=str, default="results")
     args = parser.parse_args()
     EPS = args.eps
     ITER = args.iter
     QUERY = args.query
     LOSS = args.loss
+    LAMB1 = args.lamb1
+    LAMB2 = args.lamb2
+    LAMB3 = args.lamb3
     best_records_path = 'results/bench_attack_coi-opti_eps0.2_iter20_query8/records.json'
     best_records = []
     with open(best_records_path, 'r') as file:
@@ -438,13 +459,21 @@ if __name__ == "__main__":
         iii += '-clean'
     if args.sup_adj:
         iii += '-adj'
-    folder = f'results/bench_attack_coi-opti-judge-offline-{LOSS}-i2{iii}_eps{EPS}_iter{ITER}_query{QUERY}'
+    folder = f'{args.output}/bench_attack_coi-judge-offline-{LOSS}-i2{iii}_eps{EPS}_iter{ITER}_query{QUERY}_lamb1-{LAMB1}_lamb2-{LAMB2}_lamb3-{LAMB3}'
     os.makedirs(folder, exist_ok=True)
+    dump_args(folder=folder, args=args)
     json_path = os.path.join(folder, 'dolphin_output.json')
     if os.path.exists(json_path):
         with open(json_path, 'r') as file:
             for line in file:
                 ok_unique_id.append(json.loads(line)['unique_id'])
+    # 设置日志文件，格式和日志级别
+    logging.basicConfig(
+        filename=os.path.join(folder, "attack.log"),
+        filemode="w",  # "w" 表示每次运行都覆盖文件, "a" 表示追加模式
+        format="%(asctime)s - %(levelname)s - %(message)s",
+        level=logging.INFO
+    )
 
     induction_records = []
     coi_records_file = os.path.join(folder, 'records.json')
@@ -479,6 +508,7 @@ if __name__ == "__main__":
                 if unique_id in ok_unique_id:
                     continue
                 
+                logging.info(f"{video_path}----------------------------------------------")
                 vision_x, inputs = get_model_inputs(video_path=video_path, instruction=instruction, model=model, image_processor=image_processor, tokenizer=tokenizer)
                 
                 now_dict = list(filter(lambda x: x["unique_id"] == unique_id, best_records))

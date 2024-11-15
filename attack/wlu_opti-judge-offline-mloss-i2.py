@@ -11,7 +11,7 @@ import mimetypes
 import copy
 import csv
 import random
-
+from tools.run_tools import dump_args
 import cv2
 import requests
 import torch
@@ -406,17 +406,6 @@ def inference(input_vision_x, inputs):
 
 image_mean = [0.48145466, 0.4578275, 0.40821073]
 image_std = [0.26862954, 0.26130258, 0.27577711]
-
-def dump_args(folder, args):
-    import yaml
-    # 将参数转换为字典
-    args_dict = vars(args)
-    log_file = os.path.join(folder, 'log.yaml')
-    # 将参数保存到 log.yaml 文件中
-    with open(log_file, 'w') as f:
-        yaml.dump(args_dict, f, default_flow_style=False)
-
-    print(f"参数已保存到 {log_file}")
 
 
 if __name__ == "__main__":

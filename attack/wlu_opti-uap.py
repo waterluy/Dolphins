@@ -11,7 +11,7 @@ import mimetypes
 import copy
 import csv
 import random
-
+from tools.run_tools import dump_args
 import cv2
 import requests
 import torch
@@ -273,11 +273,11 @@ if __name__ == "__main__":
     EPS = args.eps
     ITER = args.iter
     QUERY = args.query
-    model_clip.eval()
 
     ok_unique_id = []
     folder = f'results/bench_attack_coi-opti-uap_eps{EPS}_iter{ITER}_query{QUERY}'
     os.makedirs(folder, exist_ok=True)
+    dump_args(folder=folder, args=args)
     json_path = os.path.join(folder, 'dolphin_output.json')
     if os.path.exists(json_path):
         with open(json_path, 'r') as file:
@@ -291,6 +291,7 @@ if __name__ == "__main__":
     tokenizer.pad_token_id = 50277
     device = model.device
     model_clip, preprocess_clip = clip.load("ViT-B/32", device=torch.device('cuda')) 
+    model_clip.eval()
 
     generation_kwargs = {'max_new_tokens': 512, 'temperature': 1,
                                 'top_k': 0, 'top_p': 1, 'no_repeat_ngram_size': 3, 'length_penalty': 1,

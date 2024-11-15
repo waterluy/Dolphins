@@ -39,6 +39,7 @@ from torchvision import transforms
 from tqdm import tqdm
 from tools.model import GeneratorFromText
 from torchvision.transforms import InterpolationMode
+from tools.run_tools import dump_args
 
 def setup_seed(seed):
     torch.manual_seed(seed)
@@ -403,6 +404,7 @@ if __name__ == "__main__":
         iii += '-adj'
     folder = f'{args.output}/bench_attack_coi-opti-judge-offline-{LOSS}-i1{iii}_eps{EPS}_iter{ITER}_query{QUERY}'
     os.makedirs(folder, exist_ok=True)
+    dump_args(folder=folder, args=args)
     json_path = os.path.join(folder, 'dolphin_output.json')
     if os.path.exists(json_path):
         with open(json_path, 'r') as file:
