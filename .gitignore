@@ -15,3 +15,4 @@ cache/
 black/*
 tools/api.json
 exr-*
+attackvlm_noise*
