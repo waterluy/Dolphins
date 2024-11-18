@@ -1,5 +1,5 @@
 #!/bin/bash
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=1
 
 output=results1118
 lamb1=0.0
