@@ -11,7 +11,7 @@ import mimetypes
 import copy
 import csv
 import random
-
+from tools.run_tools import dump_args
 import cv2
 import requests
 import torch
@@ -287,7 +287,7 @@ def adj_supervision(
     text_tokens = clip.tokenize(texts).cuda()
     adv_logits_per_image, _ = model_clip(resize_to_224(normed_noisy_vision_x), text_tokens)
     adv_logits_per_image = torch.softmax(adv_logits_per_image, dim=-1)  # 1, 2
-    clean_logits_per_image, _ = model_clip(resize_to_224(ori_vision_x[0, 0, :]).cuda())
+    clean_logits_per_image, _ = model_clip(resize_to_224(ori_vision_x[0, 0, :]).cuda(), text_tokens)
     clean_logits_per_image = torch.softmax(clean_logits_per_image, dim=-1)  # 1, 2
 
     target_labels = torch.full(adv_logits_per_image.shape, -1).cuda()   # 初始值为-1以抑制非目标类别
@@ -386,8 +386,12 @@ def coi_attack_stage1(
             )
         # 多帧图对应同一个通用的noise
         final_noise = torch.cat([noise] * ori_vision_x.shape[2])
+        final_input = ori_vision_x.clone()
+        final_input = denormalize(final_input, mean=image_mean, std=image_std)
+        final_input = final_input + final_noise.to(final_input.device)
+        final_input = normalize(final_input, mean=image_mean, std=image_std)
         final_answer = inference(
-            input_vision_x=ori_vision_x.clone().half().cuda() + final_noise.cuda(), 
+            input_vision_x=final_input.half().cuda(), 
             inputs=ori_inputs
         )
         answers.append(final_answer)
@@ -455,6 +459,7 @@ if __name__ == "__main__":
         iii += '-adj'
     folder = f'results/bench_attack_coi-opti-uap2-judge-offline-{LOSS}-i1{iii}_eps{EPS}_iter{ITER}_query{QUERY}'
     os.makedirs(folder, exist_ok=True)
+    dump_args(folder=folder, args=args)
     json_path = os.path.join(folder, 'dolphin_output.json')
     if os.path.exists(json_path):
         with open(json_path, 'r') as file:

@@ -11,7 +11,7 @@ import mimetypes
 import copy
 import csv
 import random
-
+from tools.run_tools import dump_args
 import cv2
 import requests
 import torch
@@ -173,7 +173,7 @@ def apply_transform_and_generate_mask(patch, target_size):
         - transformed_patch: 变换后的补丁 (C, H', W')
         - transformed_mask: 与补丁对应的掩码 (1, H', W')
     """
-    c, h, w = patch.shape
+    bs, c, h, w = patch.shape
     
     random_affine = transforms.RandomAffine(
         degrees=(-5, 5), 
@@ -212,7 +212,7 @@ def text_supervision(
         b_idx,
 ):
     resize_to_224 = transforms.Resize((224, 224), interpolation=InterpolationMode.BICUBIC, max_size=None)
-    denormed_vision_x = denormalize(ori_vision_x, mean=image_mean, std=image_std)[0, 0, b_idx:b_idx].cuda()
+    denormed_vision_x = denormalize(ori_vision_x, mean=image_mean, std=image_std)[0, 0, b_idx:b_idx+1].cuda()
     # 生成与图像同尺寸的变换补丁和掩码
     input_image_size = denormed_vision_x.shape[2:]  # 输入图像目标尺寸
     transformed_patch, transformed_mask = apply_transform_and_generate_mask(patch_start, input_image_size)
@@ -300,7 +300,7 @@ def adj_supervision(
     text_tokens = clip.tokenize(texts).cuda()
     adv_logits_per_image, _ = model_clip(resize_to_224(normed_noisy_vision_x), text_tokens)
     adv_logits_per_image = torch.softmax(adv_logits_per_image, dim=-1)  # 1, 2
-    clean_logits_per_image, _ = model_clip(resize_to_224(ori_vision_x[0, 0, :]).cuda())
+    clean_logits_per_image, _ = model_clip(resize_to_224(ori_vision_x[0, 0, :]).cuda(), text_tokens)
     clean_logits_per_image = torch.softmax(clean_logits_per_image, dim=-1)  # 1, 2
 
     target_labels = torch.full(adv_logits_per_image.shape, -1).cuda()   # 初始值为-1以抑制非目标类别
@@ -384,16 +384,19 @@ def coi_attack_stage1(
     alpha = 2 * EPS / ITER
     optimizer = torch.optim.Adam(noise_generator.parameters(), lr=alpha)
     for induction_text in texts:
-        adversarial_patch = coi_attack_stage2(
-            induction_text, 
-            noise_generator=noise_generator,
-            optimizer=optimizer,
-            ori_vision_x=ori_vision_x,
-        )
+        with torch.cuda.amp.autocast():
+            adversarial_patch = coi_attack_stage2(
+                induction_text, 
+                noise_generator=noise_generator,
+                optimizer=optimizer,
+                ori_vision_x=ori_vision_x,
+            )
         final_input_vision_x = ori_vision_x.clone()
+        final_input_vision_x = denormalize(final_input_vision_x, mean=image_mean, std=image_std)
+        transformed_patch, transformed_mask = apply_transform_and_generate_mask(adversarial_patch, input_image_size)
         for b in range(batch_size):
-            transformed_patch, transformed_mask = apply_transform_and_generate_mask(adversarial_patch, input_image_size)
-            final_input_vision_x[0, 0, b, :] = final_input_vision_x[0, 0, b, :] * (1 - transformed_mask) + transformed_patch * transformed_mask
+            final_input_vision_x[0, 0, b, :] = final_input_vision_x[0, 0, b, :].cuda() * (1 - transformed_mask.cuda()) + transformed_patch.cuda() * transformed_mask.cuda()
+        final_input_vision_x = normalize(final_input_vision_x, mean=image_mean, std=image_std)
         final_answer = inference(
             input_vision_x=final_input_vision_x.half().cuda(),
             inputs=ori_inputs
@@ -465,6 +468,7 @@ if __name__ == "__main__":
         iii += '-adj'
     folder = f'results/bench_attack_coi-opti-judge-offline-{LOSS}-patch-i1{iii}_eps{EPS}_iter{ITER}_query{QUERY}'
     os.makedirs(folder, exist_ok=True)
+    dump_args(folder=folder, args=args)
     json_path = os.path.join(folder, 'dolphin_output.json')
     if os.path.exists(json_path):
         with open(json_path, 'r') as file:

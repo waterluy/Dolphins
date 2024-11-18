@@ -39,6 +39,7 @@ from torchvision import transforms
 from tqdm import tqdm
 from tools.model import GeneratorFromText
 from torchvision.transforms import InterpolationMode
+from tools.run_tools import dump_args
 
 def setup_seed(seed):
     torch.manual_seed(seed)
@@ -252,7 +253,7 @@ def adj_supervision(
     text_tokens = clip.tokenize(texts).cuda()
     adv_logits_per_image, _ = model_clip(resize_to_224(normed_noisy_vision_x), text_tokens)
     adv_logits_per_image = torch.softmax(adv_logits_per_image, dim=-1)  # 1, 2
-    clean_logits_per_image, _ = model_clip(resize_to_224(ori_vision_x[0, 0, :]).cuda())
+    clean_logits_per_image, _ = model_clip(resize_to_224(ori_vision_x[0, 0, :]).cuda(), text_tokens)
     clean_logits_per_image = torch.softmax(clean_logits_per_image, dim=-1)  # 1, 2
 
     target_labels = torch.full(adv_logits_per_image.shape, -1).cuda()   # 初始值为-1以抑制非目标类别
@@ -269,7 +270,7 @@ def adj_supervision(
 
 def coi_attack_stage2(
         induction_text,
-        noise_start,
+        noise_generator,
         optimizer,
         ori_vision_x,
 ):    
@@ -277,8 +278,8 @@ def coi_attack_stage2(
 
     for _ in range(ITER):
         total_loss = 0
-        noise_start.requires_grad = True
-        text_features = model_clip.encode_text(clip.tokenize(texts).cuda())
+        text_features = model_clip.encode_text(clip.tokenize(texts).cuda()).cuda()
+        noise_start = noise_generator(text_features)
         # print(text_features.shape)  # torch.Size([16, 512])
         if args.sup_text:
             loss_text = text_supervision(
@@ -319,20 +320,25 @@ def coi_attack_stage1(
         output_shape=ori_vision_x.shape[3:],   # (3, 336, 336),
         num_filters=[128, 64, 32],
         eps=EPS,
-    )
+    ).cuda()
     answers = []
     
     alpha = 2 * EPS / ITER
     optimizer = torch.optim.Adam(noise_generator.parameters(), lr=alpha)
     for induction_text in texts:
-        noise = coi_attack_stage2(
-            induction_text, 
-            noise_start=noise,
-            optimizer=optimizer,
-            ori_vision_x=ori_vision_x,
-        )
+        with torch.cuda.amp.autocast():
+            noise = coi_attack_stage2(
+                induction_text, 
+                noise_generator=noise_generator,
+                optimizer=optimizer,
+                ori_vision_x=ori_vision_x,
+            )
+        final_input = ori_vision_x.clone()
+        final_input = denormalize(final_input, mean=image_mean, std=image_std)
+        final_input = final_input + noise.to(final_input.device)
+        final_input = normalize(final_input, mean=image_mean, std=image_std)
         final_answer = inference(
-            input_vision_x=ori_vision_x.clone().half().cuda() + noise.cuda(), 
+            input_vision_x=final_input.half().cuda(), 
             inputs=ori_inputs
         )
         answers.append(final_answer)
@@ -375,6 +381,7 @@ if __name__ == "__main__":
     parser.add_argument('--sup-text', action='store_true')
     parser.add_argument('--sup-3p', action='store_true')
     parser.add_argument('--sup-adj', action='store_true')
+    parser.add_argument('--output', type=str, default='results')
     args = parser.parse_args()
     EPS = args.eps
     ITER = args.iter
@@ -395,8 +402,9 @@ if __name__ == "__main__":
         iii += '-clean'
     if args.sup_adj:
         iii += '-adj'
-    folder = f'results/bench_attack_coi-opti-judge-offline-{LOSS}-i1{iii}_eps{EPS}_iter{ITER}_query{QUERY}'
+    folder = f'{args.output}/bench_attack_coi-opti-judge-offline-{LOSS}-i1{iii}_eps{EPS}_iter{ITER}_query{QUERY}'
     os.makedirs(folder, exist_ok=True)
+    dump_args(folder=folder, args=args)
     json_path = os.path.join(folder, 'dolphin_output.json')
     if os.path.exists(json_path):
         with open(json_path, 'r') as file:

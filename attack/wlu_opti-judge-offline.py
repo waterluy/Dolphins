@@ -11,7 +11,7 @@ import mimetypes
 import copy
 import csv
 import random
-
+from tools.run_tools import dump_args
 import cv2
 import requests
 import torch
@@ -39,6 +39,7 @@ from torchvision import transforms
 from tools.gpt_coi import GPT
 from tools.gpt_eval import GPTEvaluation
 from tqdm import tqdm
+import torchvision
 
 def setup_seed(seed):
     torch.manual_seed(seed)
@@ -195,6 +196,7 @@ def coi_attack_stage2(
         optimizer.zero_grad()
         total_loss.backward()
         optimizer.step()
+        # noise_start = noise_start - 0.02 * noise_start.grad.sign()
         noise_start = torch.clamp(noise_start.detach(), -EPS, EPS)
 
     return noise_start.detach()
@@ -204,21 +206,38 @@ def coi_attack_stage1(
         ori_inputs,
         texts,
 ):
-    noise = torch.zeros_like(ori_vision_x[0, 0, :], requires_grad=True)
+    noise = 2 * torch.rand_like(ori_vision_x[0, 0, :]) - 1
+    noise = noise * EPS
+    noise.requires_grad = True
     answers = []
     
     alpha = 2 * EPS / ITER
     optimizer = torch.optim.Adam([noise], lr=alpha)
     ori_answer = None
-    for induction_text in texts:
+    for i, induction_text in enumerate(texts):
         noise = coi_attack_stage2(
             induction_text, 
             noise_start=noise,
             optimizer=optimizer,
             ori_vision_x=ori_vision_x
         )
+        # print(noise.sum())
+        # if i == 7:
+        #     torchvision.utils.save_image(
+        #         (noise.cuda()).detach().cpu().squeeze()[0],
+        #         "noise.png",
+        #     )
+        #     torchvision.utils.save_image(
+        #         (denormalize(ori_vision_x.clone().half().cuda(), mean=image_mean, std=image_std) + noise.cuda()).detach().cpu().squeeze()[0],
+        #         "noisy.png",
+        #     )
+        #     quit()
+        final_input = ori_vision_x.clone()
+        final_input = denormalize(final_input, mean=image_mean, std=image_std)
+        final_input = final_input + noise.to(final_input.device)
+        final_input = normalize(final_input, mean=image_mean, std=image_std)
         final_answer = inference(
-            input_vision_x=ori_vision_x.clone().half().cuda() + noise.cuda(), 
+            input_vision_x=final_input.half().cuda(), 
             inputs=ori_inputs
         )
         answers.append(final_answer)
@@ -268,6 +287,7 @@ if __name__ == "__main__":
     ok_unique_id = []
     folder = f'results/bench_attack_coi-opti-judge-offline_eps{EPS}_iter{ITER}_query{QUERY}'
     os.makedirs(folder, exist_ok=True)
+    dump_args(folder=folder, args=args)
     json_path = os.path.join(folder, 'dolphin_output.json')
     if os.path.exists(json_path):
         with open(json_path, 'r') as file:

@@ -11,7 +11,7 @@ import mimetypes
 import copy
 import csv
 import random
-
+from tools.run_tools import dump_args
 import cv2
 import requests
 import torch
@@ -282,7 +282,7 @@ def adj_supervision(
     text_tokens = clip.tokenize(texts).cuda()
     adv_logits_per_image, _ = model_clip(resize_to_224(normed_noisy_vision_x), text_tokens)
     adv_logits_per_image = torch.softmax(adv_logits_per_image, dim=-1)  # 1, 2
-    clean_logits_per_image, _ = model_clip(resize_to_224(ori_vision_x[0, 0, :]).cuda())
+    clean_logits_per_image, _ = model_clip(resize_to_224(ori_vision_x[0, 0, :]).cuda(), text_tokens)
     clean_logits_per_image = torch.softmax(clean_logits_per_image, dim=-1)  # 1, 2
 
     target_labels = torch.full(adv_logits_per_image.shape, -1).cuda()   # 初始值为-1以抑制非目标类别
@@ -317,21 +317,21 @@ def coi_attack_stage2(
                 text_features=text_features,
             )
             # print(loss_text)
-            total_loss = total_loss + loss_text
+            total_loss = total_loss + LAMB1 * loss_text
         if args.sup_clean:
             loss_clean = clean_supervision(
                 ori_vision_x=ori_vision_x,
                 noise_start=noise_start,
             )
             # print(0.02 * loss_clean)
-            total_loss = total_loss + loss_clean
+            total_loss = total_loss + LAMB2 * loss_clean
         if args.sup_adj:
             loss_adj = adj_supervision(
                 ori_vision_x=ori_vision_x,
                 noise_start=noise_start,
             )
             # print(0.02 * loss_clean)
-            total_loss = total_loss + 0.05 * loss_adj
+            total_loss = total_loss + LAMB3 * loss_adj
 
         optimizer.zero_grad()
         total_loss.backward()
@@ -345,7 +345,9 @@ def coi_attack_stage1(
         ori_inputs,
         texts,
 ):
-    noise = torch.zeros_like(ori_vision_x[0, 0, :], requires_grad=True)
+    noise = 2 * torch.rand_like(ori_vision_x[0, 0, :]) - 1
+    noise = noise * EPS
+    noise.requires_grad = True
     answers = []
     
     alpha = 2 * EPS / ITER
@@ -357,13 +359,28 @@ def coi_attack_stage1(
             optimizer=optimizer,
             ori_vision_x=ori_vision_x
         )
+        final_input = ori_vision_x.clone()
+        final_input = denormalize(final_input, mean=image_mean, std=image_std)
+        final_input = final_input + noise.to(final_input.device)
+        final_input = normalize(final_input, mean=image_mean, std=image_std)
         final_answer = inference(
-            input_vision_x=ori_vision_x.clone().half().cuda() + noise.cuda(), 
+            input_vision_x=final_input.half().cuda(), 
             inputs=ori_inputs
         )
         answers.append(final_answer)
         if final_answer == "":
             break
+    # print(noise.sum())
+    # import torchvision
+    # torchvision.utils.save_image(
+    #     (noise.cuda()).detach().cpu().squeeze()[0],
+    #     "noise.png",
+    # )
+    # torchvision.utils.save_image(
+    #     (denormalize(ori_vision_x.clone().half().cuda(), mean=image_mean, std=image_std) + noise.cuda()).detach().cpu().squeeze()[0],
+    #     "noisy.png",
+    # )
+    # quit()
     return noise.detach(), answers
 
 
@@ -401,11 +418,17 @@ if __name__ == "__main__":
     parser.add_argument('--sup-text', action='store_true')
     parser.add_argument('--sup-3p', action='store_true')
     parser.add_argument('--sup-adj', action='store_true')
+    parser.add_argument('--lamb1', type=float, default=1.0)
+    parser.add_argument('--lamb2', type=float, default=1.0)
+    parser.add_argument('--lamb3', type=float, default=0.05)
     args = parser.parse_args()
     EPS = args.eps
     ITER = args.iter
     QUERY = args.query
     LOSS = args.loss
+    LAMB1 = args.lamb1
+    LAMB2 = args.lamb2
+    LAMB3 = args.lamb3
     best_records_path = 'results/bench_attack_coi-opti_eps0.2_iter20_query8/records.json'
     best_records = []
     with open(best_records_path, 'r') as file:
@@ -421,8 +444,9 @@ if __name__ == "__main__":
         iii += '-clean'
     if args.sup_adj:
         iii += '-adj'
-    folder = f'results/bench_attack_coi-opti-judge-offline-{LOSS}-i2{iii}_eps{EPS}_iter{ITER}_query{QUERY}'
+    folder = f'results/bench_attack_coi-opti-judge-offline-{LOSS}-i2{iii}_eps{EPS}_iter{ITER}_query{QUERY}_lamb1-{LAMB1}_lamb2-{LAMB2}_lamb3-{LAMB3}'
     os.makedirs(folder, exist_ok=True)
+    dump_args(folder=folder, args=args)
     json_path = os.path.join(folder, 'dolphin_output.json')
     if os.path.exists(json_path):
         with open(json_path, 'r') as file:

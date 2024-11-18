@@ -11,7 +11,7 @@ import mimetypes
 import copy
 import csv
 import random
-
+from tools.run_tools import dump_args
 import cv2
 import requests
 import torch
@@ -282,9 +282,11 @@ def coi_attack_stage1(
             ori_vision_x=ori_vision_x,
         )
         final_input_vision_x = ori_vision_x.clone()
+        final_input_vision_x = denormalize(final_input_vision_x, mean=image_mean, std=image_std)
         for b in range(batch_size):
             transformed_patch, transformed_mask = apply_transform_and_generate_mask(adversarial_patch, input_image_size)
             final_input_vision_x[0, 0, b, :] = final_input_vision_x[0, 0, b, :] * (1 - transformed_mask) + transformed_patch * transformed_mask
+        final_input_vision_x = normalize(final_input_vision_x, mean=image_mean, std=image_std)
         final_answer = inference(
             input_vision_x=final_input_vision_x.half().cuda(),
             inputs=ori_inputs
@@ -343,6 +345,7 @@ if __name__ == "__main__":
     ok_unique_id = []
     folder = f'results/bench_attack_coi-opti-judge-offline-{LOSS}-patch_eps{EPS}_iter{ITER}_query{QUERY}'
     os.makedirs(folder, exist_ok=True)
+    dump_args(folder=folder, args=args)
     json_path = os.path.join(folder, 'dolphin_output.json')
     if os.path.exists(json_path):
         with open(json_path, 'r') as file:
