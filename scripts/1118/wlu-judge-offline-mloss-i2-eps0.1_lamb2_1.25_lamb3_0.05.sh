@@ -1,7 +1,7 @@
 #!/bin/bash
-export CUDA_VISIBLE_DEVICES=2
+export CUDA_VISIBLE_DEVICES=1
 
-output=results1117
+output=results1118
 lamb1=1.0
 lamb2=1.25
 lamb3=0.05
