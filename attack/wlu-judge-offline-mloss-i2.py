@@ -318,22 +318,19 @@ def coi_attack_stage2(
                 noise_start=noise_start,
                 text_features=text_features,
             )
-            # print(loss_text)
-            total_loss = total_loss + loss_text
+            total_loss = total_loss + LAMB1 * loss_text
         if args.sup_clean:
             loss_clean = clean_supervision(
                 ori_vision_x=ori_vision_x,
                 noise_start=noise_start,
             )
-            # print(0.02 * loss_clean)
-            total_loss = total_loss + loss_clean
+            total_loss = total_loss + LAMB2 *  loss_clean
         if args.sup_adj:
             loss_adj = adj_supervision(
                 ori_vision_x=ori_vision_x,
                 noise_start=noise_start,
             )
-            # print(0.02 * loss_clean)
-            total_loss = total_loss + 0.05 * loss_adj
+            total_loss = total_loss + LAMB3 * loss_adj
 
         noise_start.grad = None
         total_loss.backward()
