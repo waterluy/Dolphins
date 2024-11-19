@@ -291,7 +291,7 @@ if __name__ == "__main__":
     best_records = []
     with open(best_records_path, 'r') as file:
         best_records = json.load(file)
-?
+
     ok_unique_id = []
     folder = f'results/bench_attack_coi-opti-uap2-judge-offline-{LOSS}_eps{EPS}_iter{ITER}_query{QUERY}'
     os.makedirs(folder, exist_ok=True)
