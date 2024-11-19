@@ -452,12 +452,13 @@ if __name__ == "__main__":
     ok_unique_id = []
     iii = ''
     if args.sup_text:
+        assert args.lamb1 != 0.0
         iii += '-text'
-    if args.sup_3p:
-        iii += '-3p'
     if args.sup_clean:
+        assert args.lamb2 != 0.0
         iii += '-clean'
     if args.sup_adj:
+        assert args.lamb3 != 0.0
         iii += '-adj'
     folder = f'{args.output}/bench_attack_coi-judge-offline-{LOSS}-i2{iii}_eps{EPS}_iter{ITER}_query{QUERY}_lamb1-{LAMB1}_lamb2-{LAMB2}_lamb3-{LAMB3}'
     os.makedirs(folder, exist_ok=True)
