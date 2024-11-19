@@ -37,6 +37,7 @@ from peft import (
 import pickle
 from torchvision import transforms
 from PIL import Image
+from tools.run_tools import dump_args
 
 def setup_seed(seed):
     torch.manual_seed(seed)
@@ -183,7 +184,7 @@ if __name__ == "__main__":
                                 'early_stopping': True}
     
     folder = os.path.join(args.output, args.method)
-
+    dump_args(folder=folder, args=args)
     os.makedirs(folder, exist_ok=True)
     json_file = os.path.join(folder, 'dolphin_output.json')
     with open('playground/dolphins_bench/dolphins_benchmark.json', 'r') as file:

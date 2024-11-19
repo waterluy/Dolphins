@@ -12,7 +12,7 @@ vis/*
 grad_cam_images/*
 grad_cam_images11/*
 cache/
-black/*
+black
 tools/api.json
 exr-*
 attackvlm_noise*
