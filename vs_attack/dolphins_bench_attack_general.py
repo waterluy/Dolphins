@@ -160,7 +160,7 @@ def get_noise(noise_path):
     return transform(image)
 
 method2noise = {
-    'advclip': '/home/beihang/wlu/VLMAttack/AdvCLIP/uap_gan_94.38_1.png',
+    'advclip': '/home/beihang/wlu/vlmattack/AdvClip/uap_gan_94.38_1.png',
     'anyattack': '/home/beihang/wlu/VLMAttack/AnyAttack/noise_0.02.png',
 }
 
