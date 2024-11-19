@@ -161,7 +161,7 @@ def get_noise(noise_path):
 
 method2noise = {
     'advclip': '/home/beihang/wlu/vlmattack/AdvClip/uap_gan_94.38_1.png',
-    'anyattack': '/home/beihang/wlu/VLMAttack/AnyAttack/noise_0.02.png',
+    'anyattack': '/home/beihang/wlu/vlmattack/AnyAttack/noise_0.02.png',
 }
 
 if __name__ == "__main__":
@@ -182,7 +182,7 @@ if __name__ == "__main__":
                                 'do_sample': False,
                                 'early_stopping': True}
     
-    folder = os.path.join(args.output, f'bench_attack_black_{args.method}')
+    folder = os.path.join(args.output, args.method)
 
     os.makedirs(folder, exist_ok=True)
     json_file = os.path.join(folder, 'dolphin_output.json')
