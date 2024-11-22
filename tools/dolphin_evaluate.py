@@ -304,7 +304,7 @@ if __name__ == '__main__':
         writer = csv.DictWriter(csv_file, fieldnames=csv_headers)
         writer.writeheader()
         writer.writerow(csv_data)
-
+    print(f"write score into {csv_path}\n")
     print(final_scores)
     fp.write(str(final_scores)+"\n")
     print(task_instance_num)

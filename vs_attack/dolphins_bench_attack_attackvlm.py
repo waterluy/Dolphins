@@ -176,9 +176,9 @@ if __name__ == "__main__":
                                 'do_sample': False,
                                 'early_stopping': True}
     
-    folder = os.path.join(args.output, f'bench_attack_black_attackvlm{args.eps}')
-    dump_args(folder=folder, args=args)
+    folder = os.path.join(args.output, f'attackvlm{args.eps}')
     os.makedirs(folder, exist_ok=True)
+    dump_args(folder=folder, args=args)
     json_file = os.path.join(folder, 'dolphin_output.json')
     with open('playground/dolphins_bench/dolphins_benchmark.json', 'r') as file:
         data = json.load(file)
@@ -205,7 +205,7 @@ if __name__ == "__main__":
 
             # black attack
             noise_path = video_path.replace('playground/dolphins_bench', f'attackvlm_noise{args.eps}')
-            noise_path = noise_path.replace('.mp4', '-noise.png')
+            noise_path = noise_path.replace('.mp4', '-noise1.png')
             noise = get_noise(noise_path=noise_path)
             noisy_vision_x = black_attack(vision_x, noise)
 
@@ -227,8 +227,6 @@ if __name__ == "__main__":
             content_after_last_answer = generated_text[0][last_answer_index + len("<answer>"):]
             final_answer = content_after_last_answer[:content_after_last_answer.rfind("<|endofchunk|>")]
 
-            print(f"\n{video_path}\n")
-            print(f"\n\ninstruction: {instruction}\ndolphins answer: {content_after_last_answer}\n\n")
             # 写入json行数据
             file.write(
                 json.dumps({
