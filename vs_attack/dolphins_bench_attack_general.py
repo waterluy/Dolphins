@@ -163,11 +163,13 @@ def get_noise(noise_path):
 method2noise = {
     'advclip': '/home/beihang/wlu/vlmattack/AdvClip/uap_gan_94.38_1.png',
     'anyattack': '/home/beihang/wlu/vlmattack/AnyAttack/noise_0.02.png',
+    'sga': '/home/beihang/wlu/vlmattack/SGA/noise.png',
+    'vlpattack': '/home/beihang/wlu/vlmattack/VLPTransferAttack/noise.png',
 }
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--method', type=str, default='advclip', choices=['advclip', 'anyattack'])
+    parser.add_argument('--method', type=str, default='advclip', choices=['advclip', 'anyattack', 'sga', 'vlpattack'])
     parser.add_argument('--output', type=str, default='./results_vs')
     args = parser.parse_args()
     noise = get_noise(noise_path=method2noise[args.method])
@@ -184,8 +186,8 @@ if __name__ == "__main__":
                                 'early_stopping': True}
     
     folder = os.path.join(args.output, args.method)
-    dump_args(folder=folder, args=args)
     os.makedirs(folder, exist_ok=True)
+    dump_args(folder=folder, args=args)
     json_file = os.path.join(folder, 'dolphin_output.json')
     with open('playground/dolphins_bench/dolphins_benchmark.json', 'r') as file:
         data = json.load(file)
