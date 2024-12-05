@@ -15,6 +15,7 @@ from tqdm import tqdm
 from collections import defaultdict
 from gpt_eval import GPTEvaluation
 import csv
+from gpt_eval_aihub import GPTEvaluationAihub
 
 def ptb_tokenize(key_to_captions):
     captions_for_image = {}
@@ -96,7 +97,10 @@ class Evaluation():
             self.chatgpt_scores = chatgpt_scores
         else:
             self.chatgpt_scores = None
-            self.chatgpt_eval = GPTEvaluation(gpt)
+            if args.api == 'bianxie':
+                self.chatgpt_eval = GPTEvaluation(gpt)
+            elif args.api == 'aihub':
+                self.chatgpt_eval = GPTEvaluationAihub(gpt=gpt)
 
     def eval_acc(self, unique_id, answer, GT):
         if "or" in GT: 
@@ -157,6 +161,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--exp', type=str, default=None)
     parser.add_argument('--gpt', type=str, default='gpt-4o-all')
+    parser.add_argument('--api', type=str, default='aihub', choices=['bianxie', 'aihub'])
     args = parser.parse_args()
     benchmark_file = "./playground/dolphins_bench/dolphins_benchmark.json"
     chatgpt_score_file = "playground/dolphins_bench/results/dolphins/dolphins_scores.json"
