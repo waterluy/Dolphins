@@ -39,6 +39,8 @@ from torchvision import transforms
 from tqdm import tqdm
 from torchvision.transforms import InterpolationMode
 import logging
+from torchvision.transforms import ToPILImage, ToTensor
+from io import BytesIO
 
 def setup_seed(seed):
     torch.manual_seed(seed)
@@ -51,6 +53,7 @@ def get_content_type(file_path):
     content_type, _ = mimetypes.guess_type(file_path)
     return content_type
 
+from tools.constants import DefenseType
 
 # ------------------- Image and Video Handling Functions -------------------
 def extract_frames(video_path, num_frames=16):
@@ -200,37 +203,6 @@ def text_supervision(
         raise ValueError("Invalid loss type: {}".format(LOSS))
     return total_loss
 
-def inverse3p_supervision(
-        ori_vision_x,
-        noise_start,
-        ad_3p_stage,
-):
-    denormed_vision_x = denormalize(ori_vision_x, mean=image_mean, std=image_std)[0, 0, :]
-    # print(denormed_vision_x.shape)  # torch.Size([1, 3, 336, 336])
-    noisy_vision_x = denormed_vision_x.cuda()
-    noisy_vision_x = noisy_vision_x + noise_start.cuda()
-    # print(noisy_vision_x.shape) # torch.Size([1, 3, 336, 336])
-    normed_noisy_vision_x = normalize(noisy_vision_x, mean=image_mean, std=image_std)
-    resize_to_224 = transforms.Resize((224, 224), interpolation=InterpolationMode.BICUBIC, max_size=None)
-    # 定义目标文本和其他文本
-    texts = ["perception prediction plan", "perception prediction", "perception"]
-    text_tokens = clip.tokenize(texts).cuda()
-    logits_per_image, _ = model_clip(resize_to_224(normed_noisy_vision_x), text_tokens)
-    logits_per_image = torch.softmax(logits_per_image, dim=-1)
-    target_labels = torch.full(logits_per_image.shape, -1).cuda()   # 初始值为-1以抑制非目标类别
-    if ad_3p_stage == 'perception':
-        target_labels[:, 2] = 1
-    elif ad_3p_stage == 'prediction':
-        target_labels[:, 1] = 1
-    elif ad_3p_stage == 'plan':
-        target_labels[:, 0] = 1
-    mask = target_labels != -1
-    # 最大化target label 同时抑制其他label
-    bs = logits_per_image.shape[0]
-    loss = -torch.log(1e-8 + logits_per_image[mask].view(bs, -1)).mean(dim=-1, keepdim=True) + torch.log(1e-8 + logits_per_image[~mask].view(bs, -1)).mean(dim=-1, keepdim=True)
-    loss = loss.mean(dim=0)
-    return loss
-
 def clean_supervision(
         ori_vision_x,
         noise_start,
@@ -362,7 +334,7 @@ def coi_attack_stage1(
     answers = []
     momentum = 0
     
-    for induction_text in texts:
+    for i, induction_text in enumerate(texts):
         noise, momentum = coi_attack_stage2(
             induction_text, 
             noise_start=noise,
@@ -370,26 +342,10 @@ def coi_attack_stage1(
             momentum=momentum,
         )
         logging.info("-------------------------------------")
-        final_input = ori_vision_x.clone()
-        final_input = denormalize(final_input, mean=image_mean, std=image_std)
-        final_input = final_input + noise.to(final_input.device)
-        final_input = normalize(final_input, mean=image_mean, std=image_std)
-        final_answer = inference(
-            input_vision_x=final_input.half().cuda(), 
-            inputs=ori_inputs
-        )
-        answers.append(final_answer)
-        if final_answer == "":
-            break
-    # print(noise.sum())
     # import torchvision
     # torchvision.utils.save_image(
     #     (noise.cuda()).detach().cpu().squeeze()[0],
     #     "noise.png",
-    # )
-    # torchvision.utils.save_image(
-    #     (denormalize(ori_vision_x.clone().half().cuda(), mean=image_mean, std=image_std) + noise.cuda()).detach().cpu().squeeze()[0],
-    #     "noisy.png",
     # )
     # quit()
     return noise.detach(), answers
@@ -418,6 +374,20 @@ def inference(input_vision_x, inputs):
 image_mean = [0.48145466, 0.4578275, 0.40821073]
 image_std = [0.26862954, 0.26130258, 0.27577711]
 
+def jpeg_compression(im):
+    assert torch.is_tensor(im)
+    im = im.squeeze()
+    assert im.dim() == 4
+    new_im = []
+    for b in im.shape[0]:
+        cur_im = im[b]
+        cur_im = ToPILImage()(cur_im)
+        savepath = BytesIO()
+        cur_im.save(savepath, 'JPEG', quality=75)
+        cur_im = Image.open(savepath)
+        cur_im = ToTensor()(cur_im)
+        new_im.append(cur_im)
+    return torch.stack(new_im, dim=0).unsqueeze(0).unsqueeze(0)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='GPT Evaluation')
@@ -427,12 +397,12 @@ if __name__ == "__main__":
     parser.add_argument('--loss', type=str, default='cos', choices=['cos', 'kl'])
     parser.add_argument('--sup-clean', action='store_true')
     parser.add_argument('--sup-text', action='store_true')
-    parser.add_argument('--sup-3p', action='store_true')
     parser.add_argument('--sup-adj', action='store_true')
     parser.add_argument('--lamb1', type=float, default=1.0)
     parser.add_argument('--lamb2', type=float, default=1.0)
     parser.add_argument('--lamb3', type=float, default=0.05)
     parser.add_argument('--output', type=str, default="results")
+    parser.add_argument('--defense', type=str, default="jpeg", choices=['jpeg'], required=True)
     args = parser.parse_args()
     EPS = args.eps
     ITER = args.iter
@@ -457,7 +427,7 @@ if __name__ == "__main__":
     if args.sup_adj:
         assert args.lamb3 != 0.0
         iii += '-adj'
-    folder = f'{args.output}/bench_attack_coi-judge-offline-{LOSS}-i2{iii}_eps{EPS}_iter{ITER}_query{QUERY}_lamb1-{LAMB1}_lamb2-{LAMB2}_lamb3-{LAMB3}'
+    folder = f'{args.output}/defense_{args.defense}'
     os.makedirs(folder, exist_ok=True)
     dump_args(folder=folder, args=args)
     json_path = os.path.join(folder, 'dolphin_output.json')
@@ -516,9 +486,16 @@ if __name__ == "__main__":
                     induction_texts = induction_texts[:QUERY]
                 
                 noise, induction_answers = coi_attack_stage1(ori_vision_x=vision_x, ori_inputs=inputs, texts=induction_texts)
-
-                # inference  !!!!!记得加noise
-                final_answer = induction_answers[-1]
+                final_input = vision_x.clone()
+                final_input = denormalize(final_input, mean=image_mean, std=image_std)
+                final_input = final_input + noise.to(device=final_input.device, dtype=final_input.dtype)
+                if args.defense == DefenseType.JPEG:
+                    final_input = jpeg_compression(final_input)
+                final_input = normalize(final_input, mean=image_mean, std=image_std)
+                final_answer = inference(
+                    input_vision_x=final_input.half().cuda(), 
+                    inputs=inputs,
+                )
 
                 file.write(
                     json.dumps({
