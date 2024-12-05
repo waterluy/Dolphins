@@ -162,7 +162,7 @@ def get_noise(noise_path):
 
 method2noise = {
     'advclip': '/home/beihang/wlu/vlmattack/AdvClip/uap_gan_94.38_1.png',
-    'anyattack': '/home/beihang/wlu/vlmattack/AnyAttack/noise_0.04.png',
+    'anyattack': '/home/beihang/wlu/vlmattack/AnyAttack/noise_0.06.png',
     'sga': '/home/beihang/wlu/vlmattack/SGA/noise.png',
     'vlpattack': '/home/beihang/wlu/vlmattack/VLPTransferAttack/noise.png',
 }
