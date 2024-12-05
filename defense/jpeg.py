@@ -379,7 +379,7 @@ def jpeg_compression(im):
     im = im.squeeze()
     assert im.dim() == 4
     new_im = []
-    for b in im.shape[0]:
+    for b in range(im.shape[0]):
         cur_im = im[b]
         cur_im = ToPILImage()(cur_im)
         savepath = BytesIO()
@@ -489,8 +489,10 @@ if __name__ == "__main__":
                 final_input = vision_x.clone()
                 final_input = denormalize(final_input, mean=image_mean, std=image_std)
                 final_input = final_input + noise.to(device=final_input.device, dtype=final_input.dtype)
-                if args.defense == DefenseType.JPEG:
+                if args.defense == str(DefenseType.JPEG):
                     final_input = jpeg_compression(final_input)
+                else:
+                    raise Exception("Invalid defense type")
                 final_input = normalize(final_input, mean=image_mean, std=image_std)
                 final_answer = inference(
                     input_vision_x=final_input.half().cuda(), 
