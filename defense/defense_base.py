@@ -39,8 +39,8 @@ from torchvision import transforms
 from tqdm import tqdm
 from torchvision.transforms import InterpolationMode
 import logging
-from torchvision.transforms import ToPILImage, ToTensor
-from io import BytesIO
+from defense.defense_methods import jpeg_compression, nrp
+
 
 def setup_seed(seed):
     torch.manual_seed(seed)
@@ -374,20 +374,6 @@ def inference(input_vision_x, inputs):
 image_mean = [0.48145466, 0.4578275, 0.40821073]
 image_std = [0.26862954, 0.26130258, 0.27577711]
 
-def jpeg_compression(im):
-    assert torch.is_tensor(im)
-    im = im.squeeze()
-    assert im.dim() == 4
-    new_im = []
-    for b in range(im.shape[0]):
-        cur_im = im[b]
-        cur_im = ToPILImage()(cur_im)
-        savepath = BytesIO()
-        cur_im.save(savepath, 'JPEG', quality=75)
-        cur_im = Image.open(savepath)
-        cur_im = ToTensor()(cur_im)
-        new_im.append(cur_im)
-    return torch.stack(new_im, dim=0).unsqueeze(0).unsqueeze(0)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='GPT Evaluation')
@@ -402,7 +388,7 @@ if __name__ == "__main__":
     parser.add_argument('--lamb2', type=float, default=1.0)
     parser.add_argument('--lamb3', type=float, default=0.05)
     parser.add_argument('--output', type=str, default="results")
-    parser.add_argument('--defense', type=str, default="jpeg", choices=['jpeg'], required=True)
+    parser.add_argument('--defense', type=str, default=None, choices=['jpeg', 'nrp'], required=True)
     args = parser.parse_args()
     EPS = args.eps
     ITER = args.iter
@@ -491,6 +477,8 @@ if __name__ == "__main__":
                 final_input = final_input + noise.to(device=final_input.device, dtype=final_input.dtype)
                 if args.defense == str(DefenseType.JPEG):
                     final_input = jpeg_compression(final_input)
+                elif args.defense == str(DefenseType.NRP):
+                    final_input = nrp(final_input, device)
                 else:
                     raise Exception("Invalid defense type")
                 final_input = normalize(final_input, mean=image_mean, std=image_std)

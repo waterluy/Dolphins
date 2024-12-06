@@ -8,6 +8,7 @@ class DefenseType(Enum):
     ENSEMBLE_TRAINING = 'ensemble_training'
     JPEG = 'jpeg'
     QUANTIZATION = 'quantize'
+    NRP = 'nrp'
 
     @classmethod
     def has_value(cls, value):
