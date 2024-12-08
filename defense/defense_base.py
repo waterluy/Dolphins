@@ -39,7 +39,7 @@ from torchvision import transforms
 from tqdm import tqdm
 from torchvision.transforms import InterpolationMode
 import logging
-from defense.defense_methods import jpeg_compression, nrp
+from defense.defense_methods import jpeg_compression, nrp, quantize_img, tvm, median_smooth
 
 
 def setup_seed(seed):
@@ -388,7 +388,7 @@ if __name__ == "__main__":
     parser.add_argument('--lamb2', type=float, default=1.0)
     parser.add_argument('--lamb3', type=float, default=0.05)
     parser.add_argument('--output', type=str, default="results")
-    parser.add_argument('--defense', type=str, default=None, choices=['jpeg', 'nrp'], required=True)
+    parser.add_argument('--defense', type=str, default=None, choices=['jpeg', 'nrp', 'quantize', 'tvm', 'ms'], required=True)
     args = parser.parse_args()
     EPS = args.eps
     ITER = args.iter
@@ -474,11 +474,19 @@ if __name__ == "__main__":
                 noise, induction_answers = coi_attack_stage1(ori_vision_x=vision_x, ori_inputs=inputs, texts=induction_texts)
                 final_input = vision_x.clone()
                 final_input = denormalize(final_input, mean=image_mean, std=image_std)
+                # from defense.defense_methods import save_img
+                # save_img(tensor=final_input, filename=f'{args.defense}_ori.png')
                 final_input = final_input + noise.to(device=final_input.device, dtype=final_input.dtype)
                 if args.defense == str(DefenseType.JPEG):
                     final_input = jpeg_compression(final_input)
                 elif args.defense == str(DefenseType.NRP):
                     final_input = nrp(final_input, device)
+                elif args.defense == str(DefenseType.QUANTIZATION):
+                    final_input = quantize_img(final_input, depth=4)
+                elif args.defense == str(DefenseType.TVM):
+                    final_input = tvm(final_input)
+                elif args.defense == str(DefenseType.MEDIAN_SMOOTH):
+                    final_input = median_smooth(final_input)
                 else:
                     raise Exception("Invalid defense type")
                 final_input = normalize(final_input, mean=image_mean, std=image_std)

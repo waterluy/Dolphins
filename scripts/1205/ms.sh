@@ -1,5 +1,5 @@
 #!/bin/bash
-export CUDA_VISIBLE_DEVICES=3
+export CUDA_VISIBLE_DEVICES=1
 
 # 获取脚本文件的路径
 script_dir=$(dirname "$0")
@@ -15,7 +15,7 @@ lamb3=0.05
 eps=0.1
 
 
-# python defense/defense_base.py --defense $script_name --output tmp$output  --sup-text --sup-clean --sup-adj --eps $eps --iter 20 --query 8 --loss cos --lamb1 $lamb1 --lamb2 $lamb2 --lamb3 $lamb3
+python defense/defense_base.py --defense $script_name --output $output  --sup-text --sup-clean --sup-adj --eps $eps --iter 20 --query 8 --loss cos --lamb1 $lamb1 --lamb2 $lamb2 --lamb3 $lamb3
 python tools/dolphin_evaluate.py --api aihub --gpt gpt-4o --exp ${output}/defense_${script_name}/dolphin_output.json
 
 
