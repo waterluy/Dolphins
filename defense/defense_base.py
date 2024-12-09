@@ -472,17 +472,17 @@ if __name__ == "__main__":
                     induction_texts = induction_texts[:QUERY]
                 
                 noise, induction_answers = coi_attack_stage1(ori_vision_x=vision_x, ori_inputs=inputs, texts=induction_texts)
-                final_input = vision_x.clone()
-                final_input = denormalize(final_input, mean=image_mean, std=image_std)
+                final_input_ori = vision_x.clone()
+                final_input_ori = denormalize(final_input_ori, mean=image_mean, std=image_std)
                 # from defense.defense_methods import save_img
                 # save_img(tensor=final_input, filename=f'{args.defense}_ori.png')
-                final_input = final_input + noise.to(device=final_input.device, dtype=final_input.dtype)
+                final_input = final_input_ori + noise.to(device=final_input_ori.device, dtype=final_input_ori.dtype)
                 if args.defense == str(DefenseType.JPEG):
                     final_input = jpeg_compression(final_input)
                 elif args.defense == str(DefenseType.NRP):
                     final_input = nrp(final_input, device)
                 elif args.defense == str(DefenseType.QUANTIZATION):
-                    final_input = quantize_img(final_input, depth=4)
+                    final_input = quantize_img(final_input, final_input_ori, depth=4, model_clip=model_clip)
                 elif args.defense == str(DefenseType.TVM):
                     final_input = tvm(final_input)
                 elif args.defense == str(DefenseType.MEDIAN_SMOOTH):

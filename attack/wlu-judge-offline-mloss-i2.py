@@ -279,7 +279,7 @@ def adj_supervision(
     normed_noisy_vision_x = normalize(noisy_vision_x, mean=image_mean, std=image_std)
     resize_to_224 = transforms.Resize((224, 224), interpolation=InterpolationMode.BICUBIC, max_size=None)
     # 定义目标文本和其他文本
-    texts = ["A safe driving scenario.", "A dangerous driving scenario."]
+    texts = ["A safe driving scenario.", "A unsafe driving scenario."]
     text_tokens = clip.tokenize(texts).cuda()
     adv_logits_per_image, _ = model_clip(resize_to_224(normed_noisy_vision_x), text_tokens)
     adv_logits_per_image = torch.softmax(adv_logits_per_image, dim=-1)  # 1, 2

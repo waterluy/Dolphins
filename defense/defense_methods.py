@@ -14,6 +14,8 @@ from scipy.optimize import minimize
 from skimage.util import img_as_float
 import tools.constants as constants
 from scipy.ndimage import median_filter
+import torchvision.transforms as transforms
+
 
 
 # try:
@@ -50,15 +52,30 @@ def nrp(adv_images, device):
     # save_img(purified_images, f'{DefenseType.NRP}_def.png')
     return purified_images.to(device=adv_images.device, dtype=adv_images.dtype).unsqueeze(0).unsqueeze(0)
 
-def quantize_img(im, depth=4):
-    assert torch.is_tensor(im)
+def quantize_img(adv_im, clean_im, depth=4, clip_model=None):
+    assert torch.is_tensor(adv_im)
+    adv_im_wo_trans = adv_im.detach().clone()
     # save_img(im, f'{DefenseType.QUANTIZATION}_adv.png')
     N = int(math.pow(2, depth))
-    im = (im * N).round()
-    im = im / N
+    adv_im = (adv_im * N).round()
+    adv_im = adv_im / N
     # save_img(im, f'{DefenseType.QUANTIZATION}_def.png')
-    return im
+    clip_transform = transforms.Compose([
+        transforms.Resize(size=224, interpolation=transforms.InterpolationMode.BICUBIC, antialias=True),
+        transforms.Normalize(mean=(0.48145466, 0.4578275, 0.40821073), std=(0.26862954, 0.26130258, 0.27577711))
+    ])
+    adv_im = adv_im.squeeze()
+    assert adv_im.dim() == 4
+    wo_trans_feat = clip_model.encode_image(clip_transform(adv_im_wo_trans[0, 0, :]).cuda())
+    wo_trans_feat /= wo_trans_feat.norm(dim=-1, keepdim=True)
+    adv_feat = clip_model.encode_image(clip_transform(adv_im).cuda())
+    adv_feat /= adv_feat.norm(dim=-1, keepdim=True)
 
+    if torch.norm(wo_trans_feat - adv_feat, p=2) < 0.05:
+        # 未检测出对抗样本
+        return adv_im_wo_trans
+    else:
+        return clean_im
 
 def median_smooth(im, kernel_size=3):
     assert torch.is_tensor(im)
@@ -72,6 +89,8 @@ def median_smooth(im, kernel_size=3):
             smoothed_np[b, c] = median_filter(image_np[b, c], size=kernel_size)
     # 转换回 PyTorch 张量
     smoothed_tensor = torch.from_numpy(smoothed_np)
+    save_img(smoothed_tensor, 'smoothed_image.jpg')
+    quit()
     return smoothed_tensor.unsqueeze(0).unsqueeze(0)
 
 
@@ -201,7 +220,7 @@ def tv_inf_dx(x, y, lam, p, tau):
 
 
 def save_img(tensor, filename):
-    # tensor = tensor.squeeze().detach().cpu()
+    tensor = tensor.squeeze().detach().cpu()
     tensor = tensor[0]
     assert tensor.dim() == 3
     from torchvision.utils import save_image

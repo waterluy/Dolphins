@@ -17,3 +17,5 @@ tools/api.json
 exr-*
 attackvlm_noise*
 *.pyx
+dataset
+vis_defense
