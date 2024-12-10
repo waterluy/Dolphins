@@ -388,7 +388,7 @@ if __name__ == "__main__":
     parser.add_argument('--lamb2', type=float, default=1.0)
     parser.add_argument('--lamb3', type=float, default=0.05)
     parser.add_argument('--output', type=str, default="results")
-    parser.add_argument('--defense', type=str, default=None, choices=['jpeg', 'nrp', 'quantize', 'tvm', 'ms', 'post'], required=True)
+    parser.add_argument('--defense', type=str, default=None, choices=['jpeg', 'nrp', 'quantize', 'tvm', 'ms', 'post', 'prompt_3p', 'prompt_safe'], required=True)
     args = parser.parse_args()
     EPS = args.eps
     ITER = args.iter
@@ -463,6 +463,10 @@ if __name__ == "__main__":
                     continue
                 
                 logging.info(f"{video_path}----------------------------------------------")
+                if args.defense == str(DefenseType.PROMPT_3P):
+                    instruction = instruction + 'Focus particularly on the perceptual interpretation of the scene.'
+                elif args.defense == str(DefenseType.PROMPT_safe):
+                    instruction = instruction + 'Pay close attention to identifying any potential security risks in the current scene.'
                 vision_x, inputs = get_model_inputs(video_path=video_path, instruction=instruction, model=model, image_processor=image_processor, tokenizer=tokenizer)
                 
                 now_dict = list(filter(lambda x: x["unique_id"] == unique_id, best_records))
@@ -488,6 +492,10 @@ if __name__ == "__main__":
                 elif args.defense == str(DefenseType.MEDIAN_SMOOTH):
                     final_input = median_smooth(final_input)
                 elif args.defense == str(DefenseType.POST):
+                    pass
+                elif args.defense == str(DefenseType.PROMPT_3P):
+                    pass
+                elif args.defense == str(DefenseType.PROMPT_safe):
                     pass
                 else:
                     raise Exception("Invalid defense type")

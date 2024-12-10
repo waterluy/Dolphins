@@ -17,6 +17,8 @@ class DefenseType(Enum):
     NRP = 'nrp'
     MEDIAN_SMOOTH = 'ms'
     POST = 'post'
+    PROMPT_3P = 'prompt_3p'
+    PROMPT_safe = 'prompt_safe'
 
     @classmethod
     def has_value(cls, value):
