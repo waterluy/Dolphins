@@ -25,6 +25,38 @@ import torchvision.transforms as transforms
 
 vis_folder = './vis_defense'
 
+def postprocess_defense(vlm_output, danger_words=None, replacement="proceed with caution"):
+    """
+    Post-processing defense for autonomous driving VLM outputs.
+    
+    Args:
+        vlm_output (str): The output from the VLM (text response).
+        danger_words (list or set): A list of dangerous words to detect, e.g., ["collision", "accelerate", "swerve"].
+        replacement (str): The safe replacement text, default is "Proceed with caution".
+
+    Returns:
+        str: Post-processed output with dangerous words filtered and replaced.
+    """
+    if danger_words is None:
+        # Default dangerous words list
+        danger_words = {
+            "collision", "accelerate", "swerve", "brake failure", "run red light", 
+            "wrong way", "crash", "speeding", "dangerous"
+        }
+
+    # Split text and process each word
+    words = vlm_output.split()  # Simple tokenization
+    filtered_output = []
+    
+    for word in words:
+        if any(danger in word.lower() for danger in danger_words):
+            filtered_output.append(replacement)  # Replace dangerous words
+        else:
+            filtered_output.append(word)
+    
+    # Combine words back into a sentence
+    return " ".join(filtered_output)
+
 def jpeg_compression(im):
     assert torch.is_tensor(im)
     # im = im.squeeze()

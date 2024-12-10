@@ -16,6 +16,7 @@ class DefenseType(Enum):
     QUANTIZATION = 'quantize'
     NRP = 'nrp'
     MEDIAN_SMOOTH = 'ms'
+    POST = 'post'
 
     @classmethod
     def has_value(cls, value):

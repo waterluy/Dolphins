@@ -39,7 +39,7 @@ from torchvision import transforms
 from tqdm import tqdm
 from torchvision.transforms import InterpolationMode
 import logging
-from defense.defense_methods import jpeg_compression, nrp, quantize_img, tvm, median_smooth
+from defense.defense_methods import jpeg_compression, nrp, quantize_img, tvm, median_smooth, postprocess_defense
 
 
 def setup_seed(seed):
@@ -388,7 +388,7 @@ if __name__ == "__main__":
     parser.add_argument('--lamb2', type=float, default=1.0)
     parser.add_argument('--lamb3', type=float, default=0.05)
     parser.add_argument('--output', type=str, default="results")
-    parser.add_argument('--defense', type=str, default=None, choices=['jpeg', 'nrp', 'quantize', 'tvm', 'ms'], required=True)
+    parser.add_argument('--defense', type=str, default=None, choices=['jpeg', 'nrp', 'quantize', 'tvm', 'ms', 'post'], required=True)
     args = parser.parse_args()
     EPS = args.eps
     ITER = args.iter
@@ -487,6 +487,8 @@ if __name__ == "__main__":
                     final_input = tvm(final_input)
                 elif args.defense == str(DefenseType.MEDIAN_SMOOTH):
                     final_input = median_smooth(final_input)
+                elif args.defense == str(DefenseType.POST):
+                    pass
                 else:
                     raise Exception("Invalid defense type")
                 final_input = normalize(final_input, mean=image_mean, std=image_std)
@@ -494,6 +496,9 @@ if __name__ == "__main__":
                     input_vision_x=final_input.half().cuda(), 
                     inputs=inputs,
                 )
+                
+                if args.defense == str(DefenseType.POST):
+                    final_answer = postprocess_defense(final_answer)
 
                 file.write(
                     json.dumps({
