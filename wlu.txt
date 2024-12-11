@@ -15,3 +15,12 @@ Compose(
     ToTensor()
     Normalize(mean=(0.48145466, 0.4578275, 0.40821073), std=(0.26862954, 0.26130258, 0.27577711))
 )
+
+dolphins image_processor:
+Compose(
+    Resize(size=336, interpolation=bicubic, max_size=None, antialias=warn)
+    CenterCrop(size=(336, 336))
+    <function _convert_to_rgb at 0x7f7878a78790>
+    ToTensor()
+    Normalize(mean=(0.48145466, 0.4578275, 0.40821073), std=(0.26862954, 0.26130258, 0.27577711))
+)

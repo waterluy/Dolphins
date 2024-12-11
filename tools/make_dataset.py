@@ -299,4 +299,4 @@ if __name__ == '__main__':
         final_inputs = images + noise.to(images.device, dtype=images.dtype)
         # save_image(final_inputs.squeeze()[0], "output.png")
         # quit()
-        tensors2mp4(tensors=final_inputs.squeeze(), save_path=video_path.replace('playground/dolphins_bench', 'dataset'))
+        tensors2mp4(tensors=final_inputs.squeeze(), save_path=video_path.replace('playground/dolphins_bench', f'dataset/dolphins_bench_{EPS}'))
