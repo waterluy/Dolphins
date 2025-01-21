@@ -19,3 +19,4 @@ attackvlm_noise*
 *.pyx
 dataset
 vis_defense
+pic

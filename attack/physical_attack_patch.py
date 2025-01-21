@@ -3,22 +3,21 @@ sys.path.insert(0, '.')
 import torch
 from PIL import Image
 import argparse
-import json
 import os
 from tqdm import tqdm
 import cv2
 from torchvision import transforms
 import clip
-from torchvision.transforms import InterpolationMode
 import torch.nn.functional as F
 from torchvision import transforms
+from torchvision.utils import save_image
 
 
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--eps', type=float, default=0.1)
-    parser.add_argument('--iter', type=int, default=40)
-    parser.add_argument('--query', type=int, default=4)
+    parser.add_argument('--iter', type=int, default=500)
+    parser.add_argument('--query', type=int, default=1)
     parser.add_argument('--loss', type=str, default='cos', choices=['cos', 'kl'])
     parser.add_argument('--lamb1', type=float, default=0.75)
     parser.add_argument('--lamb2', type=float, default=0.75)
@@ -26,55 +25,59 @@ def parse_args():
     args = parser.parse_args()
     return args
 
+def apply_transform_and_generate_mask(patch, target_size):
+    """应用随机仿射变换并生成掩码，放置在图像上方 30% 处的中心位置。
+    参数：
+        - patch: 原始补丁 (C, H, W)
+        - target_size: 目标图像大小 (H', W')
+    返回：
+        - transformed_patch: 变换后的补丁 (C, H', W')
+        - transformed_mask: 与补丁对应的掩码 (1, H', W')
+    """
+    bs, c, h, w = patch.shape
+    
+    random_affine = transforms.RandomAffine(
+        degrees=(-5, 5), 
+        translate=(0.05, 0.1), 
+        scale=(0.90, 1.11), 
+        shear=(0.1)
+    )
+    transform_with_probability = transforms.RandomApply(
+        [random_affine],    # 要应用的变换列表
+        p=0.1               # 应用变换的概率
+    )
 
-# ------------------- Image and Video Handling Functions -------------------
-def extract_frames(video_path, num_frames=16):
-    video = cv2.VideoCapture(video_path)
-    total_frames = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
-    frame_step = total_frames // num_frames
-    frames = []
+    # 计算填充以将补丁放置在目标位置
+    center_x = int(pos_y * target_size[1]) - w // 2
+    center_y = int(pos_y * target_size[0]) - h // 2
+    
+    # 填充补丁到目标图像大小
+    padded_patch = F.pad(patch, (
+        center_x, target_size[1] - w - center_x,
+        center_y, target_size[0] - h - center_y
+    ), mode='constant', value=0)
+    
+    # 应用随机仿射变换
+    transformed_patch = transform_with_probability(padded_patch)
+    
+    # 生成掩码，仿射变换后的补丁非零区域为 1
+    mask = (transformed_patch != 0).float().sum(dim=0, keepdim=True)
+    transformed_mask = torch.clamp(mask, 0, 1)  # 转换为二值掩码 (1, H', W')
+    
+    return transformed_patch, transformed_mask
 
-    for i in range(num_frames):
-        video.set(cv2.CAP_PROP_POS_FRAMES, i * frame_step)
-        ret, frame = video.read()
-        if ret:
-            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            frame = Image.fromarray(frame).convert("RGB")
-            frames.append(frame)
-
-    video.release()
-    return frames
-
-
-def get_model_inputs(video_path):
-    frames = extract_frames(os.path.join(dolphin_folder, video_path))
-    transform = transforms.ToTensor()
-    imgs = torch.stack([transform(image) for image in frames], dim=0).to(device)
-    return imgs
-
-def get_ad_3p(task):
-    if task == "detailed_description":
-        return "perception"
-    elif task == "open_voc_object":
-        return "perception"
-    elif task == "scene":
-        return "perception"
-    elif task == "timeofday":
-        return "perception"
-    elif task == "traffic_light":
-        return "perception"
-    elif task == "weather":
-        return "perception"
-    else:
-        raise ValueError("Invalid task name: {}".format(task))
 
 def text_supervision(
         ori_img,
-        noise_start,
+        patch_start,
         text_features,
 ):
-    noisy_img = ori_img.clone().cuda()
-    noisy_img = noisy_img + noise_start.cuda()
+    # 生成与图像同尺寸的变换补丁和掩码
+    input_image_size = ori_img.shape[2:]  # 输入图像目标尺寸
+    transformed_patch, transformed_mask = apply_transform_and_generate_mask(patch_start, input_image_size)
+    # 将补丁放置到图像的指定位置，仅覆盖非空白部分
+    noisy_img = ori_img * (1 - transformed_mask.cuda()) + transformed_patch.cuda() * transformed_mask.cuda()
+    
     image_features = model_clip.encode_image(transform_clip(noisy_img))
     if LOSS == 'cos':
         text_features_normed = F.normalize(text_features, dim=-1)
@@ -101,10 +104,13 @@ def text_supervision(
 
 def clean_supervision(
         ori_img,
-        noise_start,
+        patch_start,
 ):
-    noisy_img = ori_img.clone().cuda()
-    noisy_img = noisy_img + noise_start.cuda()
+    # 生成与图像同尺寸的变换补丁和掩码
+    input_image_size = ori_img.shape[2:]  # 输入图像目标尺寸
+    transformed_patch, transformed_mask = apply_transform_and_generate_mask(patch_start, input_image_size)
+    # 将补丁放置到图像的指定位置，仅覆盖非空白部分
+    noisy_img = ori_img * (1 - transformed_mask.cuda()) + transformed_patch.cuda() * transformed_mask.cuda()
     clean_features = model_clip.encode_image(transform_clip(ori_img.cuda()))
     noise_features = model_clip.encode_image(transform_clip(noisy_img.cuda()))
     if LOSS == 'cos':
@@ -132,10 +138,13 @@ def clean_supervision(
 
 def adj_supervision(
         ori_img,
-        noise_start,
+        patch_start,
 ):
-    noisy_img = ori_img.clone().cuda()
-    noisy_img = noisy_img + noise_start.cuda()
+    # 生成与图像同尺寸的变换补丁和掩码
+    input_image_size = ori_img.shape[2:]  # 输入图像目标尺寸
+    transformed_patch, transformed_mask = apply_transform_and_generate_mask(patch_start, input_image_size)
+    # 将补丁放置到图像的指定位置，仅覆盖非空白部分
+    noisy_img = ori_img * (1 - transformed_mask.cuda()) + transformed_patch.cuda() * transformed_mask.cuda()
     # 定义目标文本和其他文本
     texts = ["A safe driving scenario.", "An unsafe driving scenario."]
     text_tokens = clip.tokenize(texts).cuda()
@@ -158,92 +167,64 @@ def adj_supervision(
 
 def coi_attack_stage2(
         induction_text,
-        noise_start,
+        patch_start,
         ori_img,
-        momentum
+        optimizer,
 ):    
     texts = [induction_text for _ in range(ori_img.shape[0])]
-    alpha = 2 * EPS / ITER
 
     for _ in range(ITER):
         total_loss = 0
-        noise_start.requires_grad = True
+        patch_start.requires_grad = True
         text_features = model_clip.encode_text(clip.tokenize(texts).cuda())
         # print(text_features.shape)  # torch.Size([16, 512])
 
         loss_text = text_supervision(
             ori_img=ori_img,
-            noise_start=noise_start,
+            patch_start=patch_start,
             text_features=text_features,
         )
         total_loss = total_loss + LAMB1 * loss_text
         
         loss_clean = clean_supervision(
             ori_img=ori_img,
-            noise_start=noise_start,
+            patch_start=patch_start,
         )
         total_loss = total_loss + LAMB2 *  loss_clean
 
         loss_adj = adj_supervision(
             ori_img=ori_img,
-            noise_start=noise_start,
+            patch_start=patch_start,
         )
         total_loss = total_loss + LAMB3 * loss_adj
 
-        noise_start.grad = None
+        optimizer.zero_grad()
         total_loss.backward()
-        gradient = noise_start.grad
-        gradient_l1 = torch.norm(gradient, 1)
-        momentum = 1.0 * momentum + gradient / gradient_l1
-        noise_start = noise_start.detach() - alpha * momentum.sign()
-        noise_start = torch.clamp(noise_start, -EPS, EPS)
+        optimizer.step()
+        patch_start = torch.clamp(patch_start.detach(), 0, 1)
 
-    return noise_start.detach(), momentum.detach()
+    return patch_start.detach()
 
 def coi_attack_stage1(
         ori_img,
-        texts,
 ):
-    noise = 2 * torch.rand_like(ori_img) - 1
-    noise = noise * EPS
-    noise.requires_grad = True
-    momentum = 0
+    batch_size, c, h, w = ori_img.shape  # 获取输入图像的高和宽
+    patch_size = (int(h * patch_ratio), int(w * patch_ratio))  # 计算补丁大小
+    # 初始化通用对抗补丁
+    adversarial_patch = torch.rand((batch_size, c, *patch_size), requires_grad=True)
+    alpha = 2 * EPS / ITER
+    optimizer = torch.optim.Adam([adversarial_patch], lr=alpha)
     
-    for induction_text in texts:
-        noise, momentum = coi_attack_stage2(
+    induction_text = 'Keep going!'
+    
+    for _ in range(args.query):
+        adversarial_patch = coi_attack_stage2(
             induction_text, 
-            noise_start=noise,
+            patch_start=adversarial_patch,
             ori_img=ori_img,
-            momentum=momentum,
+            optimizer=optimizer,
         )
-    return noise.detach()
-
-def tensors2mp4(tensors, save_path, fps=8):
-    tensors = tensors.detach().cpu()
-    # 确保输入是4D tensor (B, C, H, W)
-    assert tensors.dim() == 4, "Input tensor must be 4D (B, C, H, W)"
-    # 获取图像帧的数量，通道数，图像高度和宽度
-    num_frames, channels, height, width = tensors.shape
-    # 检查通道数是否是3（RGB图像）
-    assert channels == 3, "Input tensor must have 3 channels (RGB images)"
-    # 创建保存视频的目录（如果不存在）
-    dir = os.path.dirname(save_path)
-    os.makedirs(dir, exist_ok=True)
-    # 使用OpenCV的VideoWriter创建一个视频写入对象
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # MP4 格式
-    out = cv2.VideoWriter(save_path, fourcc, fps, (width, height))
-    # 将每一帧tensor转换为图像并写入视频
-    for i in range(num_frames):
-        # 获取单个图像帧并转换为 numpy 数组
-        frame = tensors[i].permute(1, 2, 0).cpu().numpy()  # (C, H, W) -> (H, W, C)
-        # 确保图像的像素值在[0, 255]之间
-        frame = (frame * 255).clip(0, 255).astype('uint8')  # 将范围从[0, 1]调整到[0, 255]
-        # OpenCV 默认使用 BGR（而非 RGB）颜色顺序
-        frame = frame[:, :, ::-1]  # 将 RGB 转换为 BGR
-        # 将图像帧写入视频
-        out.write(frame)
-    # 释放VideoWriter对象
-    out.release()
+    return adversarial_patch.detach()
 
 
 if __name__ == '__main__':
@@ -255,19 +236,13 @@ if __name__ == '__main__':
     LAMB1 = args.lamb1
     LAMB2 = args.lamb2
     LAMB3 = args.lamb3
+    # patch 超参数
+    ratios = [0.03, 0.06, 0.09, 0.12]
+    patch_ratio = 0.17  # 补丁相对图像大小的比例
+    pos_x = 0.5
+    pos_y = 0.3
     # setup device to use
     device = torch.device("cuda") if torch.cuda.is_available() else "cpu"
-    
-    # Dolphins
-    dolphin_folder = "/home/beihang/wlu/adllm/Dolphins"
-    dolphin_benchmark = "/home/beihang/wlu/adllm/Dolphins/playground/dolphins_bench/dolphins_benchmark.json"
-    with open(dolphin_benchmark, "r") as f:
-        dolphin_benchmark = json.load(f)
-
-    best_records_path = '/home/beihang/wlu/adllm/Dolphins/best_records.json'
-    best_records = []
-    with open(best_records_path, 'r') as file:
-        best_records = json.load(file)
 
     model_clip, preprocess_clip = clip.load("ViT-B/32", device=torch.device('cuda')) 
     model_clip.eval()
@@ -277,26 +252,16 @@ if __name__ == '__main__':
         transforms.Normalize(mean=(0.48145466, 0.4578275, 0.40821073), std=(0.26862954, 0.26130258, 0.27577711))  # 归一化
     ])
 
-    for entry in tqdm(dolphin_benchmark):
-        unique_id = entry["id"]
-        label = entry['label']
-        task_name = entry['task_name']
-        video_path = entry['video_path'][entry['video_path'].find('/')+1:]
-        # 从conversations中提取human的value和gpt的value
-        instruction = entry['conversations'][0]['value']
-        ground_truth = entry['conversations'][1]['value']
-
-        now_dict = list(filter(lambda x: x["unique_id"] == unique_id, best_records))
-        assert len(now_dict) == 1
-        induction_texts = now_dict[0]["induction_records"]
-        if QUERY < len(induction_texts):
-            induction_texts = induction_texts[:QUERY]
-        
-        images = get_model_inputs(video_path)
+    # pics
+    signs_folder = 'signs'
+    img_path_list = list(filter(lambda i: i.endswith('.png'), os.listdir(signs_folder)))
+    transform_totensor = transforms.ToTensor()
+    for path in tqdm(img_path_list):
+        frames = [Image.open(os.path.join(signs_folder, path)).convert('RGB')]
+        images = torch.stack([transform_totensor(image) for image in frames], dim=0).to(device)
         # from torchvision.utils import save_image
         # save_image(images.squeeze()[0], "input.png")
-        noise = coi_attack_stage1(images, induction_texts)
-        final_inputs = images + noise.to(images.device, dtype=images.dtype)
-        # save_image(final_inputs.squeeze()[0], "output.png")
+        patch = coi_attack_stage1(images)
+        save_image(patch[0], os.path.join(signs_folder, 'patch', path.replace('.png', '_patch.png')))
         # quit()
-        tensors2mp4(tensors=final_inputs.squeeze(), save_path=video_path.replace('playground/dolphins_bench', f'dataset/dolphins_bench_{EPS}'))
+        

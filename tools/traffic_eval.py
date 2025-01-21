@@ -8,6 +8,7 @@ from multiprocessing import Pool
 from openai import OpenAI
 import requests
 import csv
+from tqdm import tqdm
 
 class GPTEvaluationAihub:
     def __init__(self, gpt):
@@ -34,7 +35,7 @@ class GPTEvaluationAihub:
         return messages
     
     def GPT_eval(self, answer, GT):
-        prompts = "Rate my answer based on the correct answer out of 100, with higher scores indicating that the answer is closer to the correct answer, and you should be accurate to single digits like 62, 78, 41,etc. Output the number only. "
+        prompts = "Rate my answer based on the correct answer out of 100, with higher scores indicating that the answer is closer to the correct answer, and you should be accurate to single digits like 37, 59, 41,etc. Output the number only. "
         prompts = prompts + "This is the correct answer: " + GT + "This is my answer: " + answer
         
         output = ""
@@ -70,7 +71,7 @@ class GPTEvaluationAihub:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='GPT Evaluation')
-    parser.add_argument('--json-path', type=str, default='/home/beihang/wlu/adllm/Dolphins/results1228/coca_eps0.1_iter30_query1/dolphin_output.json', help='path to the data')
+    parser.add_argument('--json-path', type=str, default='/home/beihang/wlu/adllm/Dolphins/results0114/obj_level4/dolphin_output.json', help='path to the data')
     parser.add_argument('--gpt', type=str, default='gpt-4o')
     args = parser.parse_args()
 
@@ -78,15 +79,17 @@ if __name__ == "__main__":
     scores = []
     eval = GPTEvaluationAihub(gpt=args.gpt)
     
-    with open(args.json_path, mode='r', newline='', encoding='utf-8') as file:
-        lines = [line for line in file]
+    with open('/home/beihang/wlu/vlm/LLaVA/traffic_results/inf/dolphin_output.json', mode='r+') as file:
+        truth = json.load(file)
+        with open(args.json_path, mode='r+') as file:
+            data = json.load(file)
         # 遍历每一行，提取 ground_truth 和 dolphins_inference
-        for row in lines:
-            ground_truth = row['gt']
-            dolphins_inference = row['pred']
-            
-            int_score = eval.forward(answer=dolphins_inference, GT=ground_truth)
-            scores.append(int_score)
+            for i in tqdm(range(len(data))):
+                ground_truth = truth[i]['pred']['A']
+                dolphins_inference = data[i]['pred']
+                
+                int_score = eval.forward(answer=dolphins_inference, GT=ground_truth)
+                scores.append(int_score)
 
     avg_score = sum(scores) / len(scores)
     print("Average GPT Score: ", avg_score)

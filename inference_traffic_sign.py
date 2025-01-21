@@ -1,6 +1,4 @@
 import json
-import sys
-sys.path.append('.')
 import csv
 import random
 
@@ -14,7 +12,7 @@ from PIL import Image
 import mimetypes
 
 import cv2
-
+from torchvision.transforms import InterpolationMode
 import torch
 from torch.utils.data import DataLoader
 import transformers
@@ -25,7 +23,7 @@ from configs.lora_config import openflamingo_tuning_config, otter_tuning_config
 
 from mllm.src.factory import create_model_and_transforms
 from mllm.otter.modeling_otter import OtterConfig, OtterForConditionalGeneration
-
+from torchvision import transforms
 from huggingface_hub import hf_hub_download
 from peft import (
     get_peft_model,
@@ -34,10 +32,6 @@ from peft import (
     PeftConfig,
     PeftModel
 )
-import pickle
-from torchvision import transforms
-from PIL import Image
-from tools.run_tools import dump_args
 
 def setup_seed(seed):
     torch.manual_seed(seed)
@@ -130,95 +124,31 @@ def get_model_inputs(video_path, instruction, model, image_processor, tokenizer)
 
     return vision_x, inputs
 
-
-def normalize(tensor, mean, std):
-    mean = torch.tensor(mean).view(1, 3, 1, 1).half().to(tensor.device)
-    std = torch.tensor(std).view(1, 3, 1, 1).half().to(tensor.device)
-    return (tensor - mean) / std
-
-def denormalize(tensor, mean, std):
-    mean = torch.tensor(mean).view(1, 3, 1, 1).half().to(tensor.device)
-    std = torch.tensor(std).view(1, 3, 1, 1).half().to(tensor.device)
-    return tensor * std + mean
-
-def black_attack(vision_x, raw_noise):
-    # print(vision_x.shape)   # torch.Size([1, 1, 16, 3, 336, 336])
-    stacked_noise = torch.stack([raw_noise for _ in range(vision_x.shape[2])], dim=0).unsqueeze(0).unsqueeze(0)
-    new_imgs = denormalize(vision_x, mean=image_mean, std=image_std) + stacked_noise.to(vision_x.device)
-    new_imgs = normalize(new_imgs, mean=image_mean, std=image_std)
-    return new_imgs
-
-
-image_mean = [0.48145466, 0.4578275, 0.40821073]
-image_std = [0.26862954, 0.26130258, 0.27577711]
-
-def get_noise(noise_path):
-    image = Image.open(noise_path).convert('RGB')
-    transform = transforms.Compose([
-        transforms.Resize((336, 336)),
-        transforms.ToTensor(),
-    ])
-    return transform(image)
-
-method2noise = {
-    'advclip': '/home/beihang/wlu/vlmattack/AdvClip/uap_gan_94.38_1.png',
-    'anyattack': '/home/beihang/wlu/vlmattack/AnyAttack/noise_0.06.png',
-    'sga': '/home/beihang/wlu/vlmattack/SGA/noise.png',
-    'vlpattack': '/home/beihang/wlu/vlmattack/VLPTransferAttack/noise.png',
-    'advlm': '/home/beihang/wlu/adllm/Dolphins/black/dolphin_advlm_linf_eps0.1_steps50_pos.png'
-}
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--method', type=str, default='advclip', choices=['advclip', 'anyattack', 'sga', 'vlpattack', 'advlm'])
-    parser.add_argument('--output', type=str, default='./results_vs')
+    parser.add_argument('--output', type=str, default='./results')
     args = parser.parse_args()
-    noise = get_noise(noise_path=method2noise[args.method])
-    print(noise.shape)
-
     model, image_processor, tokenizer = load_pretrained_modoel()
-    device = model.device
-    tokenizer.eos_token_id = 50277
-    tokenizer.pad_token_id = 50277
-
     generation_kwargs = {'max_new_tokens': 512, 'temperature': 1,
                                 'top_k': 0, 'top_p': 1, 'no_repeat_ngram_size': 3, 'length_penalty': 1,
                                 'do_sample': False,
                                 'early_stopping': True}
-    
-    folder = os.path.join(args.output, args.method)
-    os.makedirs(folder, exist_ok=True)
-    dump_args(folder=folder, args=args)
-    json_file = os.path.join(folder, 'dolphin_output.json')
-    with open('playground/dolphins_bench/dolphins_benchmark.json', 'r') as file:
+    tokenizer.eos_token_id = 50277
+    tokenizer.pad_token_id = 50277
+    with open('/home/beihang/wlu/vlm/LLaVA/traffic_results/inf/dolphin_output.json', 'r+') as file:
         data = json.load(file)
 
-    with open(json_file, 'w') as file:
-        # 遍历JSON数据
-        for entry in data:
-            instruction = ''
-            ground_truth = ''
-            unique_id = entry["id"]
-            label = entry['label']
-            video_path = entry['video_path'][entry['video_path'].find('/')+1:]
-            task_name = entry['task_name']
-            # 从conversations中提取human的value和gpt的value
-            for conversation in entry['conversations']:
-                if conversation['from'] == 'human':
-                    instruction = conversation['value']
-                elif conversation['from'] == 'gpt':
-                    ground_truth = conversation['value']
-            if instruction == '':
-                continue
-
-            vision_x, inputs = get_model_inputs(video_path, instruction, model, image_processor, tokenizer)
-
-            # black attack
-            noisy_vision_x = black_attack(vision_x, noise)
-
-            # inference
+    transform_totensor = transforms.ToTensor()
+    os.makedirs('traffic_result', exist_ok=True)
+    resize_to_336 = transforms.Resize((336, 336), interpolation=InterpolationMode.BICUBIC, max_size=None)
+    with open(os.path.join('new_traffic_result', 'dolphin_output.json'), 'w') as file:
+        for entry in tqdm(data):
+            frames = [Image.open(os.path.join('/home/beihang/wlu/adllm/Dolphins/obj_dataset/', entry["pic_name"])).convert('RGB')]
+            images = torch.stack([resize_to_336(transform_totensor(image)) for image in frames], dim=0).unsqueeze(0).unsqueeze(0).cuda()
+            prompt = ['USER: <image> is a traffic sign.Given the image '+entry["pred"]['Q'] + 'GPT:<answer>']
+            inputs = tokenizer(prompt, return_tensors="pt", ).to(model.device)
             generated_tokens = model.generate(
-                vision_x=noisy_vision_x.half().cuda(),
+                vision_x=images.half().cuda(),
                 lang_x=inputs["input_ids"].cuda(),
                 attention_mask=inputs["attention_mask"].cuda(),
                 num_beams=3,
@@ -228,24 +158,14 @@ if __name__ == "__main__":
             generated_tokens = generated_tokens.cpu().numpy()
             if isinstance(generated_tokens, tuple):
                 generated_tokens = generated_tokens[0]
-
             generated_text = tokenizer.batch_decode(generated_tokens)
             last_answer_index = generated_text[0].rfind("<answer>")
             content_after_last_answer = generated_text[0][last_answer_index + len("<answer>"):]
-            final_answer = content_after_last_answer[:content_after_last_answer.rfind("<|endofchunk|>")]
-
-            print(f"\n{video_path}\n")
-            print(f"\n\ninstruction: {instruction}\ndolphins answer: {content_after_last_answer}\n\n")
-            # 写入json行数据
+            final_answer = content_after_last_answer.rstrip("<|endofchunk|>")
             file.write(
                 json.dumps({
-                    "unique_id": unique_id,
-                    "task_name": task_name,
+                    "pic_name": entry["pic_name"],
                     "pred": final_answer,
-                    "gt": ground_truth,
-                    "label": label
+                    "ans":entry["pred"]['A']
                 }) + "\n"
             )
-
-
-
