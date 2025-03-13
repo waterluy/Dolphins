@@ -20,3 +20,5 @@ attackvlm_noise*
 dataset
 vis_defense
 pic
+*__pycache__*
+
