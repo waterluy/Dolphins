@@ -1,7 +1,7 @@
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import open_clip
 
-from .flamingo import Flamingo
+from .flamingo import Flamingo,ForwardType
 from .flamingo_lm import FlamingoLMMixin
 from .utils import extend_instance
 from .mpt_lora_patch.modeling_mpt import MPTForCausalLM
@@ -32,6 +32,7 @@ def create_model_and_transforms(
     freeze_gated_cross_attn_layers = False,
     cache_dir = None,
     max_num_frames = None,
+    forward_type=ForwardType.Default,
     **flamingo_kwargs,
 ):
     """
@@ -118,6 +119,7 @@ def create_model_and_transforms(
         ],
         max_num_frames=max_num_frames,
         cross_attn_every_n_layers=cross_attn_every_n_layers,
+        forward_type=forward_type,
         **flamingo_kwargs,
     )
 

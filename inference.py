@@ -99,7 +99,8 @@ def load_pretrained_modoel():
         peft_config=peft_config,
     )
 
-    checkpoint_path = hf_hub_download("gray311/Dolphins", "checkpoint.pt")
+    # checkpoint_path = hf_hub_download("gray311/Dolphins", "checkpoint.pt")
+    checkpoint_path = "/home/beihang/wlu/adllm/Dolphins/ckpts/results/checkpoint/checkpoint1.pt"
     model.load_state_dict(torch.load(checkpoint_path), strict=False)
     model.half().cuda()
 
@@ -125,8 +126,8 @@ if __name__ == "__main__":
     video_path = "./playground/videos/1.mp4"
     # instruction = "What should you do?"
     # instruction = "Because the light is green."
-    instruction = "Please predict what time it is?"
-    # instruction = "Please describe this video in detail."
+    # instruction = "Please predict what time it is?"
+    instruction = "Please describe this video in detail."
     # instruction = "How should you safely drive in the current scenario?"
 
     model, image_processor, tokenizer = load_pretrained_modoel()

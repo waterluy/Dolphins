@@ -366,7 +366,11 @@ def main():
             use_peft=True if peft_config is not None else False,
             peft_config=peft_config,
         )
-        model = load_checkpoint(model, args.model_name_or_path, args.load_hf_model)
+        # model = load_checkpoint(model, args.model_name_or_path, args.load_hf_model)
+        checkpoint_path = hf_hub_download("gray311/Dolphins", "checkpoint.pt")
+        model.load_state_dict(torch.load(checkpoint_path), strict=False)
+        model.half().cuda()    
+        # model, image_processor, tokenizer = load_pretrained_modoel()
     else:
         raise NotImplementedError
         
@@ -438,7 +442,7 @@ def main():
             },
         ]
 
-    optimizer = torch.optim.AdamW(get_grouped_params(model), lr=args.learning_rate)
+    optimizer = torch.optim.AdamW(get_grouped_params(model), lr=args.learning_rate,eps=1e-3)
 
     # Scheduler and math around the number of training steps.
     overrode_max_train_steps = False
@@ -547,7 +551,6 @@ def main():
                         progress_bar.update(1)
                         completed_steps += 1
                     continue
-
             images = None
             # 4, 5, 1, 3 , 224,224
             if "image" in batch["net_input"].keys():
@@ -638,20 +641,31 @@ def main():
 
                 if completed_steps >= args.max_train_steps:
                     break
+        if args.output_dir is not None:
+            output_dir = os.path.join(args.output_dir, 'checkpoint')
+            accelerator.wait_for_everyone()
+            if accelerator.is_main_process:
+                try:
+                    os.makedirs(output_dir)
+                except OSError:
+                    pass
+                unwrapped_model = accelerator.unwrap_model(model)
+                save_checkpoint(unwrapped_model, epoch, output_dir)
+                tokenizer.save_pretrained(args.output_dir, args.dataset_type)
 
     accelerator.end_training()
 
-    if args.output_dir is not None:
-        output_dir = os.path.join(args.output_dir, args.instruction_type + "_" + args.dataset_type)
-        accelerator.wait_for_everyone()
-        if accelerator.is_main_process:
-            try:
-                os.makedirs(output_dir)
-            except OSError:
-                pass
-            unwrapped_model = accelerator.unwrap_model(model)
-            save_checkpoint(unwrapped_model, 0, output_dir)
-            tokenizer.save_pretrained(args.output_dir, args.dataset_type)
+    # if args.output_dir is not None:
+    #     output_dir = os.path.join(args.output_dir, args.instruction_type + "_" + args.dataset_type)
+    #     accelerator.wait_for_everyone()
+    #     if accelerator.is_main_process:
+    #         try:
+    #             os.makedirs(output_dir)
+    #         except OSError:
+    #             pass
+    #         unwrapped_model = accelerator.unwrap_model(model)
+    #         save_checkpoint(unwrapped_model, 0, output_dir)
+    #         tokenizer.save_pretrained(args.output_dir, args.dataset_type)
 
 if __name__ == "__main__":
     main()

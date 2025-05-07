@@ -147,8 +147,11 @@ class BDDXDataset(VQADataset):
         self.load_video()
         self.load_car_infos()
         self.construct_examples()
-
-        print(f"Training Dataset Length: {len(self.samples)}")
+        # with open('/home/beihang/wlu/adllm/Dolphins/qy_test/test', 'w') as file:
+        #     for item in self.samples:
+        #         file.write(str(item) + '\n')
+        # print(f"Training Dataset Length: {len(self.samples)}")
+        # quit()
         # print(self.samples[0])
         # # print(self.samples[-5:])
         # #
@@ -156,13 +159,15 @@ class BDDXDataset(VQADataset):
         #     print(self.samples[id])
 
     def load_car_infos(self):
-        info_path = os.path.join("/".join(self.ann_paths[0].split("/")[:-1]), "log")
+        # info_path = os.path.join("/".join(self.ann_paths[0].split("/")[:-1]), "log")
+        info_path ='/mnt/ssd2/wlu/adllm/Dolphins/datasets_part/BDDX/processed_video_info'
         self.car_infos = {}
         for file in tqdm(os.listdir(info_path), desc="[Get Car Info]"):
             file_path = os.path.join(info_path, file)
             f = h5py.File(file_path, 'r')
             infos = {}
-            vidName = file.split("_")[-1].split(".")[0].strip(" ")
+            #vidName = file.split("_")[-1].split(".")[0].strip(" ")
+            vidName = file.split("_")[-2].strip(" ")
             for key in f.keys():
                 tmp = list(f[key])
                 if "curvature" == key:
@@ -303,7 +308,9 @@ class BDDXDataset(VQADataset):
 
         num_fixed_QA = 0
         num_examples_split = 1 if self.mode != "training" else 2
+        keys = list(self.car_infos.keys())
         for uid, line in tqdm(self.annotation.items(), desc="[Fixed QA]"):
+            if line['vidName'] not in keys: continue
             if str(line['action']) == "nan" or \
                     str(line['justification']) == "nan" or \
                     (str(line['sTime']) == "nan" and str(line['eTime']) == "nan"): continue

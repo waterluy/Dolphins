@@ -1,5 +1,25 @@
 export CUDA_VISIBLE_DEVICES=6
 
+accelerate launch --multi_gpu --num_processes 2 pipeline/train2.py --output_dir ./tmp
+/home/beihang/.cache/huggingface/accelerate/default_config.yaml
+compute_environment: LOCAL_MACHINE
+debug: true
+distributed_type: MULTI_GPU
+downcast_bf16: 'no'
+enable_cpu_affinity: true
+gpu_ids: all
+machine_rank: 0
+main_training_function: main
+mixed_precision: fp16
+num_machines: 1
+num_processes: 8
+rdzv_backend: static
+same_network: true
+tpu_env: []
+tpu_use_cluster: false
+tpu_use_sudo: false
+use_cpu: false
+
 pgd attack
 python dolphins_bench_attack_pgd_white.py --eps 0.001 --steps 10 --lp linf --dire pos
 

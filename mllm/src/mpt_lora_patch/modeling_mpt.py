@@ -140,6 +140,7 @@ class MPTModel(MPTPreTrainedModel):
         if self.gradient_checkpointing and self.training:
             if use_cache:
                 use_cache = False
+        # 检查输入唯一性
         if input_ids is not None and inputs_embeds is not None:
             raise ValueError("You cannot specify both decoder_input_ids and decoder_inputs_embeds at the same time")
         elif input_ids is not None:
@@ -151,7 +152,7 @@ class MPTModel(MPTPreTrainedModel):
 
         seq_length_with_past = seq_length
         past_key_values_length = 0
-
+        # 计算历史缓存长度
         if past_key_values is not None:
             past_key_values_length = past_key_values[0][0].shape[2]
             seq_length_with_past = seq_length_with_past + past_key_values_length
@@ -162,7 +163,7 @@ class MPTModel(MPTPreTrainedModel):
             attention_mask = torch.ones(
                 (batch_size, seq_length_with_past), dtype=torch.bool, device=inputs_embeds.device
             )
-
+        # 获取词嵌入
         if inputs_embeds is None:
             tok_emb = self.wte(input_ids)
         else:
@@ -185,6 +186,8 @@ class MPTModel(MPTPreTrainedModel):
                 warnings.warn('MPT received non-None input for `sequence_id` but is configured with attn_uses_sequence_id=False. ' + 'This input will be ignored. If you want the model to use `sequence_id`, set attn_uses_sequence_id to True.')
         S = seq_length
         assert S <= self.config.max_seq_len, f'Cannot forward input with seq_len={S}, this model only supports seq_len<={self.config.max_seq_len}'
+        
+        # 进行位置编码
         if self.alibi:
             x = tok_emb
         else:
@@ -200,12 +203,14 @@ class MPTModel(MPTPreTrainedModel):
                 pos = torch.clamp(pos - torch.cumsum((~attention_mask).to(torch.int32), dim=1)[:, past_position:], min=0)
             pos_emb = self.wpe(pos)
             x = tok_emb + pos_emb
+        # dropout嵌入后处理
         if self.embedding_fraction == 1:
             x = self.emb_drop(x)
         else:
             x_shrunk = x * self.embedding_fraction + x.detach() * (1 - self.embedding_fraction)
             assert isinstance(self.emb_drop, nn.Module)
             x = self.emb_drop(x_shrunk)
+        # 注意力相关
         (attn_bias, attention_mask) = self._attn_bias(device=x.device, dtype=x.dtype, attention_mask=attention_mask, prefix_mask=prefix_mask, sequence_id=sequence_id)
         if use_cache and past_key_values is None:
             past_key_values = [() for _ in range(self.config.n_layers)]
@@ -235,12 +240,14 @@ class MPTModel(MPTPreTrainedModel):
                     self.is_causal,
                 )
             else:
-                (x, past_key_value) = block(x, past_key_value=past_key_value, attn_bias=attn_bias, attention_mask=attention_mask, is_causal=self.is_causal)
+                # 添加attn_weight
+                (x, past_key_value, attn_weight) = block(x, past_key_value=past_key_value, attn_bias=attn_bias, attention_mask=attention_mask, is_causal=self.is_causal)
 
             if past_key_values is not None:
                 past_key_values[b_idx] = past_key_value
         x = self.norm_f(x)
-        return BaseModelOutputWithPast(last_hidden_state=x, past_key_values=past_key_values, hidden_states=all_hidden_states)
+        # 添加attn_weight
+        return BaseModelOutputWithPast(last_hidden_state=x, past_key_values=past_key_values, hidden_states=all_hidden_states, attentions=attn_weight)
 
     def param_init_fn(self, module):
         init_fn_name = self.config.init_config['name']
@@ -287,7 +294,7 @@ class MPTForCausalLM(MPTPreTrainedModel):
     def get_decoder(self):
         return self.transformer
 
-    def forward(self, input_ids: torch.LongTensor, past_key_values: Optional[List[Tuple[torch.FloatTensor]]]=None, attention_mask: Optional[torch.ByteTensor]=None, prefix_mask: Optional[torch.ByteTensor]=None, sequence_id: Optional[torch.LongTensor]=None, labels: Optional[torch.LongTensor]=None, return_dict: Optional[bool]=None, output_attentions: Optional[bool]=None, output_hidden_states: Optional[bool]=None, use_cache: Optional[bool]=None, inputs_embeds: Optional[torch.FloatTensor] = None):
+    def forward(self, input_ids: torch.LongTensor, past_key_values: Optional[List[Tuple[torch.FloatTensor]]]=None, attention_mask: Optional[torch.ByteTensor]=None, prefix_mask: Optional[torch.ByteTensor]=None, sequence_id: Optional[torch.LongTensor]=None, labels: Optional[torch.LongTensor]=None, return_dict: Optional[bool]=None, output_attentions: Optional[bool]=None, output_hidden_states: Optional[bool]=None, use_cache: Optional[bool]=None, inputs_embeds: Optional[torch.FloatTensor] = None, use_attn: Optional[bool] = False):
         return_dict = return_dict if return_dict is not None else self.config.return_dict
         use_cache = use_cache if use_cache is not None else self.config.use_cache
         outputs = self.transformer(input_ids=input_ids, past_key_values=past_key_values, attention_mask=attention_mask, prefix_mask=prefix_mask, sequence_id=sequence_id, return_dict=return_dict, output_attentions=output_attentions, output_hidden_states=output_hidden_states, use_cache=use_cache, inputs_embeds=inputs_embeds)
@@ -301,7 +308,69 @@ class MPTForCausalLM(MPTPreTrainedModel):
             labels = torch.roll(labels, shifts=-1)
             labels[:, -1] = -100
             loss = F.cross_entropy(logits.view(-1, logits.size(-1)), labels.to(logits.device).view(-1))
+        if use_attn:
+            key_mask = self.get_key_mask(outputs.attentions, labels, key_mask_ratio=0.1)
+            key_loss = self.entropy_key_loss(logits, key_mask, weight=0.1)
+            loss = loss + key_loss
         return CausalLMOutputWithPast(loss=loss, logits=logits, past_key_values=outputs.past_key_values, hidden_states=outputs.hidden_states)
+
+    def entropy_key_loss(self, probs, key_mask, weight=0.1):
+        """
+        关键词熵最小化损失（鼓励关键词位置的输出概率更尖锐）
+        
+        probs:     [B, T, V] softmax后的输出
+        key_mask:  [B, T], 关键词位置为1,其他
+        weight:    此损失项的缩放因子
+        """
+        B, T, V = probs.shape
+        # print(probs.shape, key_mask.shape)  # torch.Size([4, 511, 32000]) torch.Size([4, 511])
+        probs = probs.reshape(-1, V)               # [B*T, V]
+        key_mask = key_mask.reshape(-1).bool()     # [B*T]
+        # print(probs.shape, key_mask.shape)  # torch.Size([2044, 32000]) torch.Size([2044]) 
+
+        if key_mask.sum() == 0:
+            return probs.mean() * 0  # 避免没有关键词位置时计算出nan !!!!!!
+
+        key_probs = probs[key_mask]                # [N, V]
+        # print(key_probs.shape)  # torch.Size([126, 32000])
+        entropy = - (key_probs * key_probs.log()).sum(dim=-1)  # 每个位置的熵 [N]
+        # print(entropy.shape)    # torch.Size([126])
+        mean_entropy = entropy.mean()
+        # print(mean_entropy)  # tensor(9.0183, device='cuda:0', grad_fn=<MeanBackward0>)
+        # print(mean_entropy * weight)    # tensor(0.9018, device='cuda:0', grad_fn=<MulBackward0>)
+
+        return mean_entropy * weight
+
+    def get_key_mask(self, atten, labels, key_mask_ratio=0.1):
+        # atten: [B, num_heads, seqlen_q, seqlen_k]
+        # labels: [B, seqlen]
+        bs, seqlen = labels.shape
+        valid_mask = labels != 0
+        atten = atten.detach()
+        atten = atten.mean(dim=1)  # [B, T, T] 平均掉head
+        atten = atten.mean(dim=1)   # [B, T] 平均掉 query 维度，只留下每个 token 作为 key 被关注的程度
+        # 每个位置的值就表示：这个 token 作为 key 时在全局 query 视角下被关注的平均程度；
+        # top-k
+        key_mask = torch.zeros_like(valid_mask, dtype=torch.bool)   # 初始化为 False
+        for i in range(bs):
+            # nonzero 返回的格式是 [row, col]，这里只需要 row 即可, row表示第几个有效token, col表示有效token的索引
+            # nonzero 返回的tensor一定是2维的 [n, 1]
+            valid_indices = valid_mask[i].nonzero(as_tuple=False).squeeze(-1)   # 有效的 token 索引
+            # print(valid_indices)
+            # numel函数返回张量中元素的个数
+            if valid_indices.numel() == 0:
+                continue
+            k = max(1, int(valid_indices.numel() * key_mask_ratio))  # 计算 top-k 的 k 值
+            topk_scores = atten[i, valid_indices]  # dim= 只考虑有效的 token
+            # print(topk_scores)  # torch.Size([n])
+            topk_indices = topk_scores.topk(k, largest=True).indices  # 找到 top-k 的索引
+            # print(topk_indices)  # torch.Size([k])
+            selected_positions = valid_indices[topk_indices]    # 获取对应的位置
+            # print(selected_positions.shape)
+            # print(selected_positions)
+            key_mask[i, selected_positions] = True  # 标记为 key 位置
+            # quit()
+        return key_mask
 
     def param_init_fn(self, module):
         init_fn_name = self.config.init_config['name']

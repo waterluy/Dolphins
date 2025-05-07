@@ -55,9 +55,31 @@ from mllm.src.factory import create_model_and_transforms
 
 from huggingface_hub import hf_hub_download
 import torch
+from mllm.src.flamingo import ForwardType
+from setting import ATConfig
+import enum
+
+
+
+def print_memory(msg):
+    allocated = torch.cuda.memory_allocated() / 1024**3
+    reserved = torch.cuda.memory_reserved() / 1024**3
+    print(f"[MEMORY] {msg}: Alloc={allocated:.2f}GB, Reserved={reserved:.2f}GB")
 
 logger = get_logger(__name__)
 # os.environ["WANDB_MODE"] = "offline"
+
+mean = [0.48145466, 0.4578275, 0.40821073]
+std = [0.26862954, 0.26130258, 0.27577711]
+def normalize(tensor, mean, std):
+    mean = torch.tensor(mean).view(1, 3, 1, 1).to(tensor.device)
+    std = torch.tensor(std).view(1, 3, 1, 1).to(tensor.device)
+    return (tensor - mean) / std
+
+def denormalize(tensor, mean, std):
+    mean = torch.tensor(mean).view(1, 3, 1, 1).to(tensor.device)
+    std = torch.tensor(std).view(1, 3, 1, 1).to(tensor.device)
+    return tensor * std + mean
 
 def main():
     parser = argparse.ArgumentParser()
@@ -160,7 +182,7 @@ def main():
     parser.add_argument(
         "--per_device_train_batch_size",
         type=int,
-        default=8,
+        default=2,
         help="Batch size (per device) for the training dataloader.",
     )
     parser.add_argument(
@@ -188,7 +210,7 @@ def main():
                         type=int,
                         default=100,
                         help="log loss every n steps")
-    parser.add_argument("--num_train_epochs", type=int, default=3, help="Total number of training epochs to perform.")
+    parser.add_argument("--num_train_epochs", type=int, default=1, help="Total number of training epochs to perform.")
     parser.add_argument(
         "--max_train_steps",
         type=int,
@@ -299,12 +321,28 @@ def main():
          ' `"wandb"`, `"comet_ml"` and `"clearml"`. Use `"all"` (default) to report to all integrations.'
          "Only applicable when `--with_tracking` is passed."),
     )
+    parser.add_argument(
+        "--report_to",
+        type=str,
+        default="all",
+        help=
+        ('The integration to report the results and logs to. Supported platforms are `"tensorboard"`,'
+         ' `"wandb"`, `"comet_ml"` and `"clearml"`. Use `"all"` (default) to report to all integrations.'
+         "Only applicable when `--with_tracking` is passed."),
+    )
+    parser.add_argument('--forward_type', type=int, default=0, required=True,
+                    help='ForwardType enum value')
+    parser.add_argument('--at_iter', type=int, default=10, help='Number of attack iterations')
+    parser.add_argument('--at_eps_imgs', type=float, default=0.1, help='Maximum perturbation magnitude')
+    parser.add_argument('--at_alpha_imgs', type=float, default=0.02, help='Step size for attack updates')
+
 
     parser = add_data_args(parser)
     args = parser.parse_args()
-
-    print(args)
-
+    
+    # 对抗参数
+    at_config = ATConfig(args)
+    
     accelerator_log_kwargs = {}
     accelerator_log_kwargs["log_with"] = args.report_to
     accelerator_log_kwargs["project_dir"] = args.output_dir
@@ -365,12 +403,16 @@ def main():
             cross_attn_every_n_layers=args.cross_attn_every_n_layers,
             use_peft=True if peft_config is not None else False,
             peft_config=peft_config,
+            forward_type=ForwardType(args.forward_type),
         )
-        model = load_checkpoint(model, args.model_name_or_path, args.load_hf_model)
+        # model = load_checkpoint(model, args.model_name_or_path, args.load_hf_model)
+        checkpoint_path = hf_hub_download("gray311/Dolphins", "checkpoint.pt")
+        model.load_state_dict(torch.load(checkpoint_path), strict=False)
+        model.half().cuda()    
+        # model, image_processor, tokenizer = load_pretrained_modoel()
     else:
         raise NotImplementedError
         
-    print(train_dataset_config)
     train_dataset = build_dataset(
         dataset_config=train_dataset_config,
         tokenizer=tokenizer,
@@ -385,7 +427,7 @@ def main():
         collate_fn=train_dataset.collater,
     )
 
-    print(len(train_dataset))
+
 
     if accelerator.is_main_process:
         for batch in train_dataloader:
@@ -437,8 +479,11 @@ def main():
                 "weight_decay": 0.001,
             },
         ]
+        
+    # 设置model参数
+    model.set_grad_adapter0318()
 
-    optimizer = torch.optim.AdamW(get_grouped_params(model), lr=args.learning_rate)
+    optimizer = torch.optim.AdamW(get_grouped_params(model), lr=args.learning_rate,eps=1e-3)
 
     # Scheduler and math around the number of training steps.
     overrode_max_train_steps = False
@@ -532,6 +577,8 @@ def main():
     endofchunk_token_id = tokenizer("<|endofchunk|>", add_special_tokens=False)["input_ids"][-1]
     answer_token_id = tokenizer("<answer>", add_special_tokens=False)["input_ids"][-1]
 
+    
+
     for epoch in range(starting_epoch, args.num_train_epochs):
 
         model.train()
@@ -547,14 +594,13 @@ def main():
                         progress_bar.update(1)
                         completed_steps += 1
                     continue
-
             images = None
             # 4, 5, 1, 3 , 224,224
             if "image" in batch["net_input"].keys():
                 images = (batch["net_input"]["image"].to(dtype=cast_dtype))
             input_ids = batch["net_input"]["input_ids"]
             attention_mask = batch["net_input"]["attention_mask"]
-
+                
             labels = input_ids.clone()
             labels[labels == tokenizer.pad_token_id] = -100
             labels[labels == tokenizer.eos_token] = -100
@@ -578,19 +624,102 @@ def main():
             if args.use_prompt_tuning:
                 prefix_labels = torch.full((input_ids.shape[0], peft_config.num_virtual_tokens), -100).to(input_ids.device)
                 media_locations = torch.cat((prefix_labels, input_ids), dim=1) == media_token_id
-
+            # 加入噪声
+            if ForwardType(args.forward_type) in [
+                ForwardType.Default,
+                ForwardType.Adapterwl0318,
+                ForwardType.AdapterWithResidual,
+                ForwardType.AdapterNoShare,
+                ForwardType.AdapterWithResidualNoShare,
+                ForwardType.AdapterKeyEntropyAtten,
+                ForwardType.DefaultKeyEntropyAtten,
+                ForwardType.AdapterBothKeyEntropyAtten,
+                ForwardType.AdapterResKeyEntropyAtten,
+                ForwardType.AdapterResBothKeyEntropyAtten
+            ]:
+                    model.eval()
+                    denorm_imgs = denormalize(images, mean, std)
+                    noise = 2 * torch.randn_like(denorm_imgs) - 1
+                    # print(noise.shape)
+                    noise = torch.clamp(noise, -args.at_eps_imgs, args.at_eps_imgs)
+                    for attack_iter in range(args.at_iter):
+                        noise.requires_grad = True
+                        perturbed_imgs = torch.clamp(denorm_imgs + noise, 0, 1)  # 保持像素值在合法范围
+                        perturbed_imgs = normalize(perturbed_imgs, mean, std)
+                        # 使用 torch.cuda.amp.autocast 确保混合精度生效
+                        with torch.cuda.amp.autocast(dtype=torch.float16):
+                            loss = model(
+                                vision_x=perturbed_imgs.half(),
+                                lang_x=input_ids,
+                                attention_mask=attention_mask,
+                                labels=labels,
+                                media_locations=media_locations,
+                                forward_type=ForwardType(args.forward_type),
+                            )[0]   
+                        grad = torch.autograd.grad(loss, noise, create_graph=False, retain_graph=False)[0]
+                        with torch.no_grad():
+                            noise += args.at_alpha_imgs * grad.sign()
+                            noise = torch.clamp(noise, -args.at_eps_imgs, args.at_eps_imgs)
+                        # 释放中间变量
+                        del perturbed_imgs, loss, grad
+                        torch.cuda.empty_cache()
+                    images = torch.clamp(denorm_imgs + noise, 0, 1)  # 保持像素值在合法范围
+                    images = normalize(images, mean, std)
+                    model.train(True)  
+            else:
+                raise Exception("not support this forward type")              
+    
+            # 模型训练
             with accelerator.accumulate(model):
-                loss = model(
-                    vision_x=images.half(),
-                    lang_x=input_ids,
-                    attention_mask=attention_mask,
-                    labels=labels,
-                    media_locations=media_locations,
-                )[0]
+                # print("labels", labels)
+                if ForwardType(args.forward_type) in [
+                    ForwardType.Default,
+                    ForwardType.Adapterwl0318,
+                    ForwardType.AdapterWithResidual,
+                    ForwardType.AdapterNoShare,
+                    ForwardType.AdapterWithResidualNoShare,
+                    ForwardType.AdapterResBothKeyEntropyAtten,
+                    ForwardType.AdapterBothKeyEntropyAtten,
+                ]:
+                    loss = model(
+                        vision_x=images.half(),
+                        lang_x=input_ids,
+                        attention_mask=attention_mask,
+                        labels=labels,
+                        media_locations=media_locations,
+                        forward_type=ForwardType(args.forward_type),
+                    )[0]
+                elif ForwardType(args.forward_type) in [
+                    ForwardType.AdapterKeyEntropyAtten,
+                    ForwardType.AdapterResKeyEntropyAtten,
+                ]:
+                    loss = model(
+                        vision_x=images.half(),
+                        lang_x=input_ids,
+                        attention_mask=attention_mask,
+                        labels=labels,
+                        media_locations=media_locations,
+                        forward_type=ForwardType.Adapterwl0318,
+                    )[0]
+                elif ForwardType(args.forward_type) in [
+                    ForwardType.DefaultKeyEntropyAtten,  # default 都没有adapter, 
+                    ForwardType.DefaultBothKeyEntropyAtten,
+                ]:
+                    loss = model(
+                        vision_x=images.half(),
+                        lang_x=input_ids,
+                        attention_mask=attention_mask,
+                        labels=labels,
+                        media_locations=media_locations,
+                        forward_type=ForwardType.Default,
+                    )[0]
+                else:
+                    raise Exception("not support this forward type")
 
                 progress_bar.set_description(
                     f"Epoch {epoch} - Step {step} - LR: {optimizer.param_groups[0]['lr']:.2e} - loss: {loss:.4f}")
-
+                if step % 50==0:
+                    logger.info(f"Epoch {epoch} - Step {step} - LR: {optimizer.param_groups[0]['lr']:.2e} - loss: {loss:.4f}")
                 total_loss += loss.detach().float()
                 losses.append(loss.detach().float())
 
@@ -638,20 +767,31 @@ def main():
 
                 if completed_steps >= args.max_train_steps:
                     break
+        if args.output_dir is not None:
+            output_dir = os.path.join(args.output_dir, 'new_checkpoint')
+            accelerator.wait_for_everyone()
+            if accelerator.is_main_process:
+                try:
+                    os.makedirs(output_dir)
+                except OSError:
+                    pass
+                unwrapped_model = accelerator.unwrap_model(model)
+                save_checkpoint(unwrapped_model, epoch, output_dir)
+                tokenizer.save_pretrained(args.output_dir, args.dataset_type)
 
     accelerator.end_training()
 
-    if args.output_dir is not None:
-        output_dir = os.path.join(args.output_dir, args.instruction_type + "_" + args.dataset_type)
-        accelerator.wait_for_everyone()
-        if accelerator.is_main_process:
-            try:
-                os.makedirs(output_dir)
-            except OSError:
-                pass
-            unwrapped_model = accelerator.unwrap_model(model)
-            save_checkpoint(unwrapped_model, 0, output_dir)
-            tokenizer.save_pretrained(args.output_dir, args.dataset_type)
+    # if args.output_dir is not None:
+    #     output_dir = os.path.join(args.output_dir, args.instruction_type + "_" + args.dataset_type)
+    #     accelerator.wait_for_everyone()
+    #     if accelerator.is_main_process:
+    #         try:
+    #             os.makedirs(output_dir)
+    #         except OSError:
+    #             pass
+    #         unwrapped_model = accelerator.unwrap_model(model)
+    #         save_checkpoint(unwrapped_model, 0, output_dir)
+    #         tokenizer.save_pretrained(args.output_dir, args.dataset_type)
 
 if __name__ == "__main__":
     main()

@@ -10,28 +10,9 @@ from transformers.modeling_outputs import CausalLMOutputWithPast
 from torch.distributed.fsdp import (
     FullyShardedDataParallel as FSDP,
 )
-import enum
+
 from .utils import apply_with_stopping_condition
-from .adapter_utils import AdapterConfig, Adapter, AdapterWithLayerNorm, AdapterWithResidual
-  
-class ForwardType(enum.Enum):
-    Default = 0
-    Imbeddings = 1
-    Adapterwl0318 = 5
-    Denoisewl0320 = 6
-    AdapterWithResidual = 7
-    Adapter2attack = 8
-    AdapterNoShare = 105
-    AdapterWithResidualNoShare = 107
-    AdapterForVisual = 115
-    AdapterWithResidualForVisual = 117
-    AdapterWeightLoss = 9
-    AdapterKeyLoss = 10
-    AdapterKeyEntropyAtten = 11
-    DefaultKeyEntropyAtten = 12
-    AdapterBothKeyEntropyAtten = 13
-    AdapterResKeyEntropyAtten = 14
-    AdapterResBothKeyEntropyAtten = 15
+
 
 class Flamingo(nn.Module):
     def __init__(
@@ -44,7 +25,6 @@ class Flamingo(nn.Module):
         max_num_frames: int,
         cross_attn_every_n_layers: int = 1,
         gradient_checkpointing: bool = False,
-        forward_type=ForwardType.Default,
     ):
         """
         Args:
@@ -67,38 +47,6 @@ class Flamingo(nn.Module):
 
         self.vision_encoder = vision_encoder.visual
         self.perceiver = PerceiverResampler(dim=self.vis_dim, max_num_frames=max_num_frames)
-        # 加入adapter
-        self.forward_type = forward_type
-        if forward_type in [
-            ForwardType.Adapterwl0318, ForwardType.Adapter2attack,
-            ForwardType.AdapterForVisual, ForwardType.AdapterWeightLoss,
-            ForwardType.AdapterKeyLoss, ForwardType.AdapterKeyEntropyAtten,
-            ForwardType.AdapterBothKeyEntropyAtten,
-        ]:
-            print("forward_type:", forward_type)
-            self.at_adapter = Adapter(config=AdapterConfig(d_model=self.vis_dim))
-        if forward_type == ForwardType.Denoisewl0320:
-            print("forward_type:", forward_type)
-            self.at_adapter = AdapterWithLayerNorm(config=AdapterConfig(d_model=self.vis_dim))
-        if forward_type in [
-            ForwardType.AdapterWithResidual, ForwardType.AdapterWithResidualForVisual,
-            ForwardType.AdapterResKeyEntropyAtten, ForwardType.AdapterResBothKeyEntropyAtten,
-        ]:
-            print("forward_type:", forward_type)
-            self.at_adapter = AdapterWithResidual(config=AdapterConfig(d_model=self.vis_dim))
-        if forward_type in [ForwardType.AdapterNoShare]:
-            # adapter 参数不共享
-            print("forward_type:", forward_type)
-            self.at_adapter = nn.ModuleList(
-                [Adapter(config=AdapterConfig(d_model=self.vis_dim)) for _ in range(self.lang_encoder._get_decoder_layers())]
-            )
-        if forward_type in [ForwardType.AdapterWithResidualNoShare]:
-            # adapter 参数不共享
-            print("forward_type:", forward_type)
-            self.at_adapter = nn.ModuleList(
-                [AdapterWithResidual(config=AdapterConfig(d_model=self.vis_dim)) for _ in range(self.lang_encoder._get_decoder_layers())]
-            )
-        
         self.lang_encoder = lang_encoder
         self.lang_encoder.init_flamingo(
             media_token_id=media_token_id,
@@ -122,8 +70,6 @@ class Flamingo(nn.Module):
         clear_conditioned_layers: bool = True,
         past_key_values=None,
         use_cache: bool = False,
-        forward_type=ForwardType.Default,
-        adv_imgs=None,
     ):
         """
         Forward pass of Flamingo.
@@ -163,61 +109,17 @@ class Flamingo(nn.Module):
 
         else:
             # Case: do not use caching (i.e. this is a standard forward pass);
-            if forward_type in [
-                ForwardType.Default,
-                ForwardType.DefaultKeyEntropyAtten,  # ?????????
-                ]:
-                self._encode_vision_x_original(vision_x=vision_x)
-            elif forward_type in [
-                ForwardType.Adapterwl0318, 
-                ForwardType.AdapterWithResidual,
-                ForwardType.AdapterNoShare,
-                ForwardType.AdapterWithResidualNoShare, 
-                ForwardType.AdapterForVisual,
-                ForwardType.AdapterWithResidualForVisual,
-                ForwardType.AdapterKeyEntropyAtten, #主要在lang_encoder中修改
-                ForwardType.AdapterBothKeyEntropyAtten,
-                ForwardType.AdapterResKeyEntropyAtten,
-                ForwardType.AdapterResBothKeyEntropyAtten,
-            ]:
-                self._encode_vision_x_with_adapterwl0318(vision_x=vision_x)
-            elif forward_type == ForwardType.Denoisewl0320:
-                if adv_imgs is not None:
-                    # 用于训练模型, 只denoise, 拿到denoise的损失
-                    return self._encode_vision_x_only_denoisewl0320(vision_x=vision_x, adv_vision_x=adv_imgs)
-                else:
-                    # 用于攻击 走带有denoise的完整的流程
-                    self._encode_vision_x_with_denoisewl0320(vision_x=vision_x)
-            else:
-                raise NotImplementedError(
-                    f"forward_type {forward_type} is not implemented."
-                )
+            self._encode_vision_x(vision_x=vision_x)
             self._condition_media_locations(input_ids=lang_x)
-        if forward_type in [
-            ForwardType.AdapterKeyEntropyAtten,
-            ForwardType.DefaultKeyEntropyAtten,
-            ForwardType.AdapterBothKeyEntropyAtten,
-            ForwardType.AdapterResKeyEntropyAtten,
-            ForwardType.AdapterResBothKeyEntropyAtten,
-        ]:
-            output = self.lang_encoder(
-                input_ids=lang_x,
-                attention_mask=attention_mask,
-                labels=labels,
-                media_locations=media_locations,
-                past_key_values=past_key_values,
-                use_cache=use_cache,
-                use_attn=True,
-            )
-        else:
-            output = self.lang_encoder(
-                input_ids=lang_x,
-                attention_mask=attention_mask,
-                labels=labels,
-                media_locations=media_locations,
-                past_key_values=past_key_values,
-                use_cache=use_cache,
-            )
+
+        output = self.lang_encoder(
+            input_ids=lang_x,
+            attention_mask=attention_mask,
+            labels=labels,
+            media_locations=media_locations,
+            past_key_values=past_key_values,
+            use_cache=use_cache,
+        )
 
         if clear_conditioned_layers:
             self.lang_encoder.clear_conditioned_layers()
@@ -299,7 +201,7 @@ class Flamingo(nn.Module):
         self.lang_encoder._use_cached_vision_x = False
         return output
 
-    def _encode_vision_x_original(self, vision_x: torch.Tensor):
+    def _encode_vision_x(self, vision_x: torch.Tensor):
         """
         Compute media tokens from vision input by passing it through vision encoder and conditioning language model.
         Args:
@@ -324,133 +226,6 @@ class Flamingo(nn.Module):
 
         for layer in self.lang_encoder._get_decoder_layers():
             layer.condition_vis_x(vision_x)
-            
-    def _encode_vision_x_with_adapterwl0318(self, vision_x: torch.Tensor):
-        """
-        Compute media tokens from vision input by passing it through vision encoder and conditioning language model.
-        Args:
-            vision_x (torch.Tensor): Vision input
-                shape (B, T_img, F, C, H, W)
-                Images in the same chunk are collated along T_img, and frames are collated along F
-                Currently only F=1 is supported (single-frame videos)
-
-        rearrange code based on https://github.com/dhansmair/flamingo-mini
-        """
-
-        assert vision_x.ndim == 6, "vision_x should be of shape (b, T_img, F, C, H, W)"
-        b, T, F = vision_x.shape[:3]
-        # assert F == 1, "Only single frame supported"
-
-        vision_x = rearrange(vision_x, "b T F c h w -> (b T F) c h w")
-        
-        with torch.no_grad():
-            vision_x = self.vision_encoder(vision_x)[1]
-        vision_x = rearrange(vision_x, "(b T F) v d -> b T F v d", b=b, T=T, F=F)
-        vision_x = self.perceiver(vision_x)
-            
-        if self.forward_type in [
-                ForwardType.Adapterwl0318,
-                ForwardType.AdapterWithResidual,
-                ForwardType.AdapterWeightLoss,
-                ForwardType.AdapterKeyLoss,
-                ForwardType.AdapterKeyEntropyAtten, #主要在lang_encoder中修改
-                ForwardType.AdapterBothKeyEntropyAtten,
-                ForwardType.AdapterResKeyEntropyAtten,
-                ForwardType.AdapterResBothKeyEntropyAtten,
-            ]:
-                # 参数共享
-                vision_x = self.at_adapter(vision_x)
-
-                for layer in self.lang_encoder._get_decoder_layers():
-                    layer.condition_vis_x(vision_x)           
-        elif self.forward_type in [
-                ForwardType.AdapterNoShare,
-                ForwardType.AdapterWithResidualNoShare,
-            ]:
-                # 参数不共享
-                adapter_index=0
-                for layer in self.lang_encoder._get_decoder_layers():
-                    vision_x = self.at_adapter[adapter_index](vision_x)
-                    layer.condition_vis_x(vision_x)
-                    adapter_index+=1         
-        else: 
-                raise ValueError(f"Unknown forward_type: {self.forward_type}")
-            
-    def _encode_vision_x_with_denoisewl0320(self, vision_x: torch.Tensor):
-        """
-        Compute media tokens from vision input by passing it through vision encoder and conditioning language model.
-        Args:
-            vision_x (torch.Tensor): Vision input
-                shape (B, T_img, F, C, H, W)
-                Images in the same chunk are collated along T_img, and frames are collated along F
-                Currently only F=1 is supported (single-frame videos)
-
-        rearrange code based on https://github.com/dhansmair/flamingo-mini
-        """
-
-        assert vision_x.ndim == 6, "vision_x should be of shape (b, T_img, F, C, H, W)"
-        b, T, F = vision_x.shape[:3]
-        # assert F == 1, "Only single frame supported"
-
-        vision_x = rearrange(vision_x, "b T F c h w -> (b T F) c h w")
-        
-        with torch.no_grad():
-            vision_x = self.vision_encoder(vision_x)[1]
-        vision_x = rearrange(vision_x, "(b T F) v d -> b T F v d", b=b, T=T, F=F)
-        vision_x = self.perceiver(vision_x)
-        
-        vision_x = self.at_adapter(vision_x)
-
-        for layer in self.lang_encoder._get_decoder_layers():
-            layer.condition_vis_x(vision_x)
-
-        
-    def _encode_vision_x_only_denoisewl0320(self, vision_x: torch.Tensor, adv_vision_x: torch.Tensor):
-        assert vision_x.ndim == 6, "vision_x should be of shape (b, T_img, F, C, H, W)"
-        b, T, F = vision_x.shape[:3]
-        # assert F == 1, "Only single frame supported"
-
-        vision_x = rearrange(vision_x, "b T F c h w -> (b T F) c h w")
-        
-        with torch.no_grad():
-            vision_x = self.vision_encoder(vision_x)[1]
-        vision_x = rearrange(vision_x, "(b T F) v d -> b T F v d", b=b, T=T, F=F)
-        vision_x = self.perceiver(vision_x)
-        
-        assert adv_vision_x.ndim == 6, "vision_x should be of shape (b, T_img, F, C, H, W)"
-        b, T, F = adv_vision_x.shape[:3]
-        # assert F == 1, "Only single frame supported"
-
-        adv_vision_x = rearrange(adv_vision_x, "b T F c h w -> (b T F) c h w")
-        
-        with torch.no_grad():
-            adv_vision_x = self.vision_encoder(adv_vision_x)[1]
-        adv_vision_x = rearrange(adv_vision_x, "(b T F) v d -> b T F v d", b=b, T=T, F=F)
-        adv_vision_x = self.perceiver(adv_vision_x)
-        
-        # denoise
-        denoise_vision_x = self.at_adapter(adv_vision_x)
-        # print(torch.sum(visual_query))
-        # print(torch.sum(adv_visual_query))
-        # 用干净图像的visual query和adv visual query做对比，得到loss
-        # print(torch.nn.functional.cosine_similarity(denoise_visual_query, visual_query, dim=-1).shape)  # torch.Size([3, 10])
-        cosine_loss = 1 - torch.nn.functional.cosine_similarity(denoise_vision_x, vision_x, dim=-1).mean()
-        # print(cosine_loss)
-        mse_loss = torch.nn.functional.mse_loss(denoise_vision_x, vision_x)
-        # print(mse_loss)
-        loss = cosine_loss + 0.5 * mse_loss  # 余弦损失主导，MSE 作为辅助
-        return [loss]
-        
-
-    def set_grad_adapter0318(self):
-        for param in self.vision_encoder.parameters():
-            param.requires_grad = False       
-        for param in self.perceiver.parameters():
-            param.requires_grad = False
-        for param in self.lang_encoder.parameters():
-            param.requires_grad = False
-        for param in self.at_adapter.parameters():
-            param.requires_grad = True
 
     def wrap_fsdp(self, wrapper_kwargs, device_id):
         """

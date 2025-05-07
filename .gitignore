@@ -8,7 +8,7 @@ csvfiles/
 mllm/otter/__pycache__/*
 t
 tmp*
-vis/*
+vis
 grad_cam_images/*
 grad_cam_images11/*
 cache/
@@ -21,4 +21,6 @@ dataset
 vis_defense
 pic
 *__pycache__*
-
+wandb
+ckpts
+results4CAD

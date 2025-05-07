@@ -136,7 +136,7 @@ def save_checkpoint(model, step, output_dir):
     for k in model_state:
         model_state[k] = model_state[k].to(torch.float16).cpu()
 
-    print(f"Saving checkpoint to {output_dir}/checkpoint.pt")
-    torch.save(model_state, f"{output_dir}/checkpoint.pt")
+    print(f"Saving checkpoint to {output_dir}/checkpoint{step}.pt")
+    torch.save(model_state, f"{output_dir}/checkpoint{step}.pt")
 
 

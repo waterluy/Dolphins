@@ -23,6 +23,13 @@ inst_datasets = [
 
 alignment_datasets = [
     dict(
+        type="bddx",
+        vis_root="/mnt/ssd2/wlu/adllm/Dolphins/datasets_part/BDDX/frame_tsv_part/training_32frames_img_size256.img.tsv",
+        ann_paths=["/mnt/ssd2/wlu/adllm/Dolphins/captions_BDDX_clean.json"],
+        max_seq_length=256,
+        sample=50000,
+    ),
+    dict(
         type="llava",
         vis_root="/home/yingzi/MultiInstruct/MSCOCO2014/train2014",
         ann_paths=[
