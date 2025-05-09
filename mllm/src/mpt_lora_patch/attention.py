@@ -17,15 +17,36 @@ def _reset_is_causal(num_query_tokens: int, num_key_tokens: int, original_is_cau
     return original_is_causal
 
 def scaled_multihead_dot_product_attention(query, key, value, n_heads, softmax_scale=None, attn_bias=None, key_padding_mask=None, is_causal=False, dropout_p=0.0, training=False, needs_weights=False, multiquery=False):
-    q = rearrange(query, 'b s (h d) -> b h s d', h=n_heads)
-    k = rearrange(key, 'b s (h d) -> b h d s', h=1 if multiquery else n_heads)
+    '''
+    query: [batch_size (b), seq_len (s), hidden_dim (h*d)]  h注意力头数量 d单头维度
+    key,         # shape: [b, s_k, hidden_dim (h*d)] 
+    value,       # shape: [b, s_k, hidden_dim (h*d)]
+    n_heads,     # 注意力头数
+    softmax_scale=0.08838834764831843,  # 缩放因子
+    attn_bias=None,      # shape: 需能广播到[b, h, s_q, s_k]    torch.Size([bs, 32, 1, 185])
+    key_padding_mask=None,  # shape: [b, s_k], 布尔掩码
+    is_causal=True,      # 是否因果掩码
+    dropout_p=0.0,        # dropout概率
+    training=False,       # 是否训练模式
+    needs_weights=False,  # 是否返回注意力权重
+    multiquery=False      # 是否多查询注意力（共享K/V头）
+    '''
+    # 重组Q: [b, s, h*d] -> [b, h, s, d]
+    q = rearrange(query, 'b s (h d) -> b h s d', h=n_heads) # torch.Size([2, 32, 185, 128])
+    # 重组K V: 
+    # multiquery=True时: [b, s_k, d] -> [b, 1, d, s_k] (共享头)
+    # multiquery=False时: [b, s_k, h*d] -> [b, h_k, d, s_k]
+    k = rearrange(key, 'b s (h d) -> b h d s', h=1 if multiquery else n_heads)  # shape: [b, h_k, d, s_k] torch.Size([2, 32, 128, 185])
     v = rearrange(value, 'b s (h d) -> b h s d', h=1 if multiquery else n_heads)
+    # 获取当前数据类型的最小值（用于掩码填充）
     min_val = torch.finfo(q.dtype).min
-    (b, _, s_q, d) = q.shape
-    s_k = k.size(-1)
+    (b, _, s_q, d) = q.shape    # 2, 32, 185, 128
+    s_k = k.size(-1)    # 185
     if softmax_scale is None:
-        softmax_scale = 1 / math.sqrt(d)
-    attn_weight = q.matmul(k) * softmax_scale
+        softmax_scale = 1 / math.sqrt(d)    # 1/sqrt(d_k)
+    # 计算注意力分数: [b, h, s_q, s_k] torch.Size([2, 32, 185, 185])
+    attn_weight = q.matmul(k) * softmax_scale   # (Q*K^T)/sqrt(d_k)
+    # 添加注意力偏置（如相对位置编码）
     if attn_bias is not None:
         if attn_bias.size(-1) != 1 and attn_bias.size(-1) != s_k or (attn_bias.size(-2) != 1 and attn_bias.size(-2) != s_q):
             raise RuntimeError(f'attn_bias (shape: {attn_bias.shape}) is expected to broadcast to shape: {attn_weight.shape}.')
@@ -34,12 +55,15 @@ def scaled_multihead_dot_product_attention(query, key, value, n_heads, softmax_s
         if attn_bias is not None:
             warnings.warn('Propogating key_padding_mask to the attention module ' + 'and applying it within the attention module can cause ' + 'unneccessary computation/memory usage. Consider integrating ' + 'into attn_bias once and passing that to each attention ' + 'module instead.')
         attn_weight = attn_weight.masked_fill(~key_padding_mask.view((b, 1, 1, s_k)), min_val)
+    # 处理因果掩码（防止未来信息泄漏）
     if is_causal:
         s = max(s_q, s_k)
-        causal_mask = attn_weight.new_ones(s, s, dtype=torch.float16)
-        causal_mask = causal_mask.tril()
+        # 创建下三角掩码: [s, s]
+        causal_mask = attn_weight.new_ones(s, s, dtype=torch.float16)   # 全1矩阵
+        causal_mask = causal_mask.tril()    # 下三角部分置1
         causal_mask = causal_mask.to(torch.bool)
-        causal_mask = ~causal_mask
+        causal_mask = ~causal_mask  # 反转掩码（上三角为True）
+        # 截取右下角: [s_q, s_k]
         causal_mask = causal_mask[-s_q:, -s_k:]
         attn_weight = attn_weight.masked_fill(causal_mask.view(1, 1, s_q, s_k), min_val)
     attn_weight = torch.softmax(attn_weight, dim=-1)

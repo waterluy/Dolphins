@@ -110,7 +110,6 @@ class Flamingo(nn.Module):
         self._use_gradient_checkpointing = gradient_checkpointing
         self.perceiver._use_gradient_checkpointing = gradient_checkpointing
         self.device = self.lang_encoder.device
-        self.grad_cam = False
 
     def forward(
         self,
@@ -173,14 +172,12 @@ class Flamingo(nn.Module):
                 ForwardType.AdapterWithResidual,
                 ForwardType.AdapterNoShare,
                 ForwardType.AdapterWithResidualNoShare, 
-                ForwardType.AdapterForVisual,
-                ForwardType.AdapterWithResidualForVisual,
                 ForwardType.AdapterKeyEntropyAtten, #主要在lang_encoder中修改
                 ForwardType.AdapterBothKeyEntropyAtten,
                 ForwardType.AdapterResKeyEntropyAtten,
                 ForwardType.AdapterResBothKeyEntropyAtten,
             ]:
-                self._encode_vision_x_with_adapterwl0318(vision_x=vision_x)
+                self._encode_vision_x_with_adapterwl0318(vision_x=vision_x, forward_type=forward_type)
             elif forward_type == ForwardType.Denoisewl0320:
                 if adv_imgs is not None:
                     # 用于训练模型, 只denoise, 拿到denoise的损失
@@ -209,7 +206,20 @@ class Flamingo(nn.Module):
                 use_cache=use_cache,
                 use_attn=True,
             )
-        else:
+        elif forward_type in [
+            ForwardType.Default,
+            ForwardType.Imbeddings,
+            ForwardType.Adapterwl0318,
+            ForwardType.Denoisewl0320,
+            ForwardType.AdapterWithResidual,
+            ForwardType.Adapter2attack,
+            ForwardType.AdapterNoShare,
+            ForwardType.AdapterWithResidualNoShare,
+            ForwardType.AdapterForVisual,
+            ForwardType.AdapterWithResidualForVisual,
+            ForwardType.AdapterWeightLoss,
+            ForwardType.AdapterKeyLoss,
+        ]:
             output = self.lang_encoder(
                 input_ids=lang_x,
                 attention_mask=attention_mask,
@@ -217,6 +227,10 @@ class Flamingo(nn.Module):
                 media_locations=media_locations,
                 past_key_values=past_key_values,
                 use_cache=use_cache,
+            )
+        else:
+            raise NotImplementedError(
+                f"forward_type {forward_type} is not implemented."
             )
 
         if clear_conditioned_layers:
@@ -243,6 +257,7 @@ class Flamingo(nn.Module):
         num_return_sequences=1,
         do_sample=False,
         early_stopping=False,
+        forward_type=ForwardType.Default,
     ):
         """
         Generate text conditioned on vision and language inputs.
@@ -273,7 +288,26 @@ class Flamingo(nn.Module):
             vision_x = vision_x.repeat_interleave(num_beams, dim=0)
 
         self.lang_encoder._use_cached_vision_x = True
-        self._encode_vision_x(vision_x=vision_x)
+        if forward_type in [
+            ForwardType.Default,
+            ForwardType.DefaultKeyEntropyAtten,  # ?????????
+            ]:
+            self._encode_vision_x_original(vision_x=vision_x)
+        elif forward_type in [
+            ForwardType.Adapterwl0318, 
+            ForwardType.AdapterWithResidual,
+            ForwardType.AdapterNoShare,
+            ForwardType.AdapterWithResidualNoShare, 
+            ForwardType.AdapterKeyEntropyAtten, #主要在lang_encoder中修改
+            ForwardType.AdapterBothKeyEntropyAtten,
+            ForwardType.AdapterResKeyEntropyAtten,
+            ForwardType.AdapterResBothKeyEntropyAtten,
+        ]:
+            self._encode_vision_x_with_adapterwl0318(vision_x=vision_x, forward_type=forward_type)
+        else:
+            raise NotImplementedError(
+                f"forward_type {forward_type} is not implemented."
+            )
 
         output = self.lang_encoder.generate(
             input_ids=lang_x,
@@ -325,7 +359,7 @@ class Flamingo(nn.Module):
         for layer in self.lang_encoder._get_decoder_layers():
             layer.condition_vis_x(vision_x)
             
-    def _encode_vision_x_with_adapterwl0318(self, vision_x: torch.Tensor):
+    def _encode_vision_x_with_adapterwl0318(self, vision_x: torch.Tensor, forward_type: ForwardType):
         """
         Compute media tokens from vision input by passing it through vision encoder and conditioning language model.
         Args:
@@ -342,13 +376,13 @@ class Flamingo(nn.Module):
         # assert F == 1, "Only single frame supported"
 
         vision_x = rearrange(vision_x, "b T F c h w -> (b T F) c h w")
-        
-        with torch.no_grad():
-            vision_x = self.vision_encoder(vision_x)[1]
+
+        # with torch.no_grad():
+        vision_x = self.vision_encoder(vision_x)[1]
         vision_x = rearrange(vision_x, "(b T F) v d -> b T F v d", b=b, T=T, F=F)
         vision_x = self.perceiver(vision_x)
             
-        if self.forward_type in [
+        if forward_type in [
                 ForwardType.Adapterwl0318,
                 ForwardType.AdapterWithResidual,
                 ForwardType.AdapterWeightLoss,
@@ -363,7 +397,7 @@ class Flamingo(nn.Module):
 
                 for layer in self.lang_encoder._get_decoder_layers():
                     layer.condition_vis_x(vision_x)           
-        elif self.forward_type in [
+        elif forward_type in [
                 ForwardType.AdapterNoShare,
                 ForwardType.AdapterWithResidualNoShare,
             ]:
@@ -451,6 +485,23 @@ class Flamingo(nn.Module):
             param.requires_grad = False
         for param in self.at_adapter.parameters():
             param.requires_grad = True
+
+
+    def set_grad_adat(self):
+        for param in self.vision_encoder.parameters():
+            param.requires_grad = False     
+        for param in self.perceiver.parameters():
+            param.requires_grad = True
+        for param in self.lang_encoder.parameters():
+            param.requires_grad = False
+
+    def set_grad_visualat(self):
+        for param in self.vision_encoder.parameters():
+            param.requires_grad = True      
+        for param in self.perceiver.parameters():
+            param.requires_grad = False
+        for param in self.lang_encoder.parameters():
+            param.requires_grad = False
 
     def wrap_fsdp(self, wrapper_kwargs, device_id):
         """

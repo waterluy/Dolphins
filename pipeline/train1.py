@@ -55,31 +55,9 @@ from mllm.src.factory import create_model_and_transforms
 
 from huggingface_hub import hf_hub_download
 import torch
-from mllm.src.flamingo import ForwardType
-from setting import ATConfig
-import enum
-
-
-
-def print_memory(msg):
-    allocated = torch.cuda.memory_allocated() / 1024**3
-    reserved = torch.cuda.memory_reserved() / 1024**3
-    print(f"[MEMORY] {msg}: Alloc={allocated:.2f}GB, Reserved={reserved:.2f}GB")
 
 logger = get_logger(__name__)
 # os.environ["WANDB_MODE"] = "offline"
-
-mean = [0.48145466, 0.4578275, 0.40821073]
-std = [0.26862954, 0.26130258, 0.27577711]
-def normalize(tensor, mean, std):
-    mean = torch.tensor(mean).view(1, 3, 1, 1).to(tensor.device)
-    std = torch.tensor(std).view(1, 3, 1, 1).to(tensor.device)
-    return (tensor - mean) / std
-
-def denormalize(tensor, mean, std):
-    mean = torch.tensor(mean).view(1, 3, 1, 1).to(tensor.device)
-    std = torch.tensor(std).view(1, 3, 1, 1).to(tensor.device)
-    return tensor * std + mean
 
 def main():
     parser = argparse.ArgumentParser()
@@ -321,25 +299,17 @@ def main():
          ' `"wandb"`, `"comet_ml"` and `"clearml"`. Use `"all"` (default) to report to all integrations.'
          "Only applicable when `--with_tracking` is passed."),
     )
-    parser.add_argument('--forward_type', type=int, default=0, required=True,
-                    help='ForwardType enum value')
-    parser.add_argument('--at_iter', type=int, default=10, help='Number of attack iterations')
-    parser.add_argument('--at_eps_imgs', type=float, default=0.1, help='Maximum perturbation magnitude')
-    parser.add_argument('--at_alpha_imgs', type=float, default=0.02, help='Step size for attack updates')
-
 
     parser = add_data_args(parser)
     args = parser.parse_args()
-    
-    # 对抗参数
-    at_config = ATConfig(args)
-    
+
+    print(args)
+
     accelerator_log_kwargs = {}
     accelerator_log_kwargs["log_with"] = args.report_to
     accelerator_log_kwargs["project_dir"] = args.output_dir
     accelerator = Accelerator(
         gradient_accumulation_steps=args.gradient_accumulation_steps,
-        # mixed_precision="fp16",
         **accelerator_log_kwargs)
 
     if accelerator.is_main_process:
@@ -395,7 +365,6 @@ def main():
             cross_attn_every_n_layers=args.cross_attn_every_n_layers,
             use_peft=True if peft_config is not None else False,
             peft_config=peft_config,
-            forward_type=ForwardType(args.forward_type),
         )
         # model = load_checkpoint(model, args.model_name_or_path, args.load_hf_model)
         checkpoint_path = hf_hub_download("gray311/Dolphins", "checkpoint.pt")
@@ -418,7 +387,6 @@ def main():
         shuffle=True,
         collate_fn=train_dataset.collater,
     )
-
 
 
     if accelerator.is_main_process:
@@ -471,9 +439,6 @@ def main():
                 "weight_decay": 0.001,
             },
         ]
-        
-    # 设置model参数
-    model.set_grad_adapter0318()
 
     optimizer = torch.optim.AdamW(get_grouped_params(model), lr=args.learning_rate,eps=1e-3)
 
@@ -569,8 +534,6 @@ def main():
     endofchunk_token_id = tokenizer("<|endofchunk|>", add_special_tokens=False)["input_ids"][-1]
     answer_token_id = tokenizer("<answer>", add_special_tokens=False)["input_ids"][-1]
 
-    
-
     for epoch in range(starting_epoch, args.num_train_epochs):
 
         model.train()
@@ -616,111 +579,18 @@ def main():
             if args.use_prompt_tuning:
                 prefix_labels = torch.full((input_ids.shape[0], peft_config.num_virtual_tokens), -100).to(input_ids.device)
                 media_locations = torch.cat((prefix_labels, input_ids), dim=1) == media_token_id
-            # 加入噪声
-            if ForwardType(args.forward_type) in [
-                ForwardType.Default,
-                ForwardType.Adapterwl0318,
-                ForwardType.AdapterWithResidual,
-                ForwardType.AdapterNoShare,
-                ForwardType.AdapterWithResidualNoShare,
-                ForwardType.AdapterKeyEntropyAtten,
-                ForwardType.DefaultKeyEntropyAtten,
-                ForwardType.AdapterBothKeyEntropyAtten,
-                ForwardType.AdapterResKeyEntropyAtten,
-                ForwardType.AdapterResBothKeyEntropyAtten
-            ]:
-                    model.eval()
-                    denorm_imgs = denormalize(images, mean, std)
-                    noise = 2 * torch.randn_like(denorm_imgs) - 1
-                    noise = torch.clamp(noise, -at_config.at_eps_imgs, at_config.at_eps_imgs)
-                    for attack_iter in range(at_config.at_iter):
-                        noise.requires_grad = True
-                        perturbed_imgs = torch.clamp(denorm_imgs + noise, 0, 1)  # 保持像素值在合法范围
-                        perturbed_imgs = normalize(perturbed_imgs, mean, std)
-                        # 使用 torch.cuda.amp.autocast 确保混合精度生效
-                        with torch.cuda.amp.autocast(dtype=torch.float16):
-                            loss = model(
-                                vision_x=perturbed_imgs.half(),
-                                lang_x=input_ids,
-                                attention_mask=attention_mask,
-                                labels=labels,
-                                media_locations=media_locations,
-                                forward_type=ForwardType(args.forward_type),
-                            )[0]   
-                        grad = torch.autograd.grad(loss, noise, create_graph=False, retain_graph=False)[0]
-                        with torch.no_grad():
-                            noise = noise.detach() + at_config.at_alpha_imgs * grad.sign()
-                            noise = torch.clamp(noise, -at_config.at_eps_imgs, at_config.at_eps_imgs)
-                        # 释放中间变量
-                        del perturbed_imgs, loss, grad
-                        # torch.cuda.empty_cache()
-                    images = torch.clamp(denorm_imgs + noise, 0, 1)  # 保持像素值在合法范围
-                    images = normalize(images, mean, std)
-                    model.train(True)  
-            else:
-                raise Exception(f"not support {ForwardType(args.forward_type)} forward type")              
-
-            optimizer.zero_grad()
-            
-            # 模型训练
             with accelerator.accumulate(model):
-                # print("labels", labels)
-                if ForwardType(args.forward_type) in [
-                    ForwardType.Default,
-                    ForwardType.Adapterwl0318,
-                    ForwardType.AdapterWithResidual,
-                    ForwardType.AdapterNoShare,
-                    ForwardType.AdapterWithResidualNoShare,
-                    ForwardType.AdapterResBothKeyEntropyAtten,
-                    ForwardType.AdapterBothKeyEntropyAtten,
-                ]:
-                    with torch.cuda.amp.autocast(dtype=torch.float16):
-                        output = model(
-                            vision_x=images.half(),
-                            lang_x=input_ids,
-                            attention_mask=attention_mask,
-                            labels=labels,
-                            media_locations=media_locations,
-                            forward_type=ForwardType(args.forward_type),
-                        )
-                        loss = output['loss']
-                elif ForwardType(args.forward_type) in [
-                    ForwardType.AdapterKeyEntropyAtten,
-                    ForwardType.AdapterResKeyEntropyAtten,
-                ]:
-                    with torch.cuda.amp.autocast(dtype=torch.float16):
-                        output = model(
-                            vision_x=images.half(),
-                            lang_x=input_ids,
-                            attention_mask=attention_mask,
-                            labels=labels,
-                            media_locations=media_locations,
-                            forward_type=ForwardType.Adapterwl0318,
-                        )
-                        loss = output['loss']
-                elif ForwardType(args.forward_type) in [
-                    ForwardType.DefaultKeyEntropyAtten,  # default 都没有adapter, 
-                    ForwardType.DefaultBothKeyEntropyAtten,
-                ]:
-                    with torch.cuda.amp.autocast(dtype=torch.float16):
-                        output = model(
-                            vision_x=images.half(),
-                            lang_x=input_ids,
-                            attention_mask=attention_mask,
-                            labels=labels,
-                            media_locations=media_locations,
-                            forward_type=ForwardType.Default,
-                        )
-                        loss = output['loss']
-                else:
-                    raise Exception(f"not support {ForwardType(args.forward_type)} forward type")
-
-                ce_loss = output['ce_loss']
-                key_loss = output['key_loss']
+                loss = model(
+                    vision_x=images.half(),
+                    lang_x=input_ids,
+                    attention_mask=attention_mask,
+                    labels=labels,
+                    media_locations=media_locations,
+                )[0]
                 progress_bar.set_description(
-                    f"Epoch {epoch} - Step {step} - LR: {optimizer.param_groups[0]['lr']:.2e} - loss: {loss:.4f} ce_loss: {ce_loss:.4f} key_loss: {key_loss:.4f}")
+                    f"Epoch {epoch} - Step {step} - LR: {optimizer.param_groups[0]['lr']:.2e} - loss: {loss:.4f}")
                 if step % 50==0:
-                    logger.info(f"Epoch {epoch} - Step {step} - LR: {optimizer.param_groups[0]['lr']:.2e} - loss: {loss:.4f} ce_loss: {ce_loss:.4f} key_loss: {key_loss:.4f}")
+                    logger.info(f"Epoch {epoch} - Step {step} - LR: {optimizer.param_groups[0]['lr']:.2e} - loss: {loss:.4f}")
                 total_loss += loss.detach().float()
                 losses.append(loss.detach().float())
 
@@ -764,7 +634,6 @@ def main():
                         save_checkpoint(unwrapped_model, completed_steps, output_dir)
 
                         gc.collect()
-                        # torch.cuda.empty_cache()
 
                 if completed_steps >= args.max_train_steps:
                     break

@@ -39,6 +39,7 @@ from torchvision import transforms
 from tqdm import tqdm
 from torchvision.transforms import InterpolationMode
 import logging
+from mllm.src.flamingo import ForwardType
 
 def setup_seed(seed):
     torch.manual_seed(seed)
@@ -108,9 +109,14 @@ def load_pretrained_modoel():
         cross_attn_every_n_layers=4,
         use_peft=True,
         peft_config=peft_config,
+        forward_type=ForwardType(FORWARDTYPE),
     )
 
-    checkpoint_path = hf_hub_download("gray311/Dolphins", "checkpoint.pt")
+    if CKPT is None:
+        checkpoint_path = hf_hub_download("gray311/Dolphins", "checkpoint.pt")
+    else:
+        checkpoint_path = CKPT
+    print('load checkpoint from:', checkpoint_path)
     model.load_state_dict(torch.load(checkpoint_path), strict=False)
     model.half().cuda()
 
@@ -401,6 +407,7 @@ def inference(input_vision_x, inputs):
         lang_x=inputs["input_ids"].clone().cuda(),
         attention_mask=inputs["attention_mask"].clone().cuda(),
         num_beams=3,
+        forward_type=ForwardType(FORWARDTYPE),
         **generation_kwargs,
     )
 
@@ -433,7 +440,11 @@ if __name__ == "__main__":
     parser.add_argument('--lamb2', type=float, default=1.0)
     parser.add_argument('--lamb3', type=float, default=0.05)
     parser.add_argument('--output', type=str, default="results")
+    parser.add_argument('--ckpt', type=str, default=None)
+    parser.add_argument('--forward_type', type=int, default=0)
     args = parser.parse_args()
+    CKPT = args.ckpt
+    FORWARDTYPE = args.forward_type
     EPS = args.eps
     ITER = args.iter
     QUERY = args.query
@@ -441,7 +452,7 @@ if __name__ == "__main__":
     LAMB1 = args.lamb1
     LAMB2 = args.lamb2
     LAMB3 = args.lamb3
-    best_records_path = 'results/bench_attack_coi-opti_eps0.2_iter20_query8/records.json'
+    best_records_path = 'best_records.json'
     best_records = []
     with open(best_records_path, 'r') as file:
         best_records = json.load(file)
@@ -457,7 +468,7 @@ if __name__ == "__main__":
     if args.sup_adj:
         assert args.lamb3 != 0.0
         iii += '-adj'
-    folder = f'{args.output}/bench_attack_coi-judge-offline-{LOSS}-i2{iii}_eps{EPS}_iter{ITER}_query{QUERY}_lamb1-{LAMB1}_lamb2-{LAMB2}_lamb3-{LAMB3}'
+    folder = args.output
     os.makedirs(folder, exist_ok=True)
     dump_args(folder=folder, args=args)
     json_path = os.path.join(folder, 'dolphin_output.json')
@@ -519,6 +530,8 @@ if __name__ == "__main__":
 
                 # inference  !!!!!记得加noise
                 final_answer = induction_answers[-1]
+                print('[Q]: ', instruction)
+                print('[A]: ', final_answer)
 
                 file.write(
                     json.dumps({

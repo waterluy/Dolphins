@@ -1,0 +1,30 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+
+        {
+            "name": "Python Debugger: Current File with Arguments",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "pipeline/at_train.py",
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "justMyCode": false,
+            "purpose": ["debug-in-terminal"],
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "4",
+            },
+            "args": [
+                "--use_lora",
+                "--output_dir", "./tmp",
+                "--per_device_train_batch_size", "2",
+                "--at_iter", "10",
+                "--at_eps_imgs", "0.1",
+                "--forward_type", "13",
+            ]
+        }
+    ]
+}

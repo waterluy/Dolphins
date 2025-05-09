@@ -241,8 +241,8 @@ class MPTModel(MPTPreTrainedModel):
                 )
             else:
                 # 添加attn_weight
-                (x, past_key_value, attn_weight) = block(x, past_key_value=past_key_value, attn_bias=attn_bias, attention_mask=attention_mask, is_causal=self.is_causal)
-
+                (x, past_key_value, attn_weight) = block(x, past_key_value=past_key_value, attn_bias=attn_bias, attention_mask=attention_mask, is_causal=self.is_causal,
+                                                         needs_weights=True)
             if past_key_values is not None:
                 past_key_values[b_idx] = past_key_value
         x = self.norm_f(x)
@@ -293,27 +293,33 @@ class MPTForCausalLM(MPTPreTrainedModel):
 
     def get_decoder(self):
         return self.transformer
-
+    # lables.shape: [B, seqlen]
     def forward(self, input_ids: torch.LongTensor, past_key_values: Optional[List[Tuple[torch.FloatTensor]]]=None, attention_mask: Optional[torch.ByteTensor]=None, prefix_mask: Optional[torch.ByteTensor]=None, sequence_id: Optional[torch.LongTensor]=None, labels: Optional[torch.LongTensor]=None, return_dict: Optional[bool]=None, output_attentions: Optional[bool]=None, output_hidden_states: Optional[bool]=None, use_cache: Optional[bool]=None, inputs_embeds: Optional[torch.FloatTensor] = None, use_attn: Optional[bool] = False):
         return_dict = return_dict if return_dict is not None else self.config.return_dict
         use_cache = use_cache if use_cache is not None else self.config.use_cache
         outputs = self.transformer(input_ids=input_ids, past_key_values=past_key_values, attention_mask=attention_mask, prefix_mask=prefix_mask, sequence_id=sequence_id, return_dict=return_dict, output_attentions=output_attentions, output_hidden_states=output_hidden_states, use_cache=use_cache, inputs_embeds=inputs_embeds)
-        logits = F.linear(outputs.last_hidden_state, self.transformer.wte.weight)
+        logits = F.linear(outputs.last_hidden_state, self.transformer.wte.weight)   # logits: [B, seqlen, V]
         if self.logit_scale is not None:
             if self.logit_scale == 0:
                 warnings.warn(f'Multiplying logits by self.logit_scale={self.logit_scale!r}. This will produce uniform (uninformative) outputs.')
             logits *= self.logit_scale
         loss = None
+        key_loss = 0
+        ce_loss = 0
         if labels is not None:
             labels = torch.roll(labels, shifts=-1)
             labels[:, -1] = -100
-            loss = F.cross_entropy(logits.view(-1, logits.size(-1)), labels.to(logits.device).view(-1))
+            # F.cross_entropy: ignore_index: int = -100,
+            ce_loss = F.cross_entropy(logits.view(-1, logits.size(-1)), labels.to(logits.device).view(-1))
         if use_attn:
             key_mask = self.get_key_mask(outputs.attentions, labels, key_mask_ratio=0.1)
-            key_loss = self.entropy_key_loss(logits, key_mask, weight=0.1)
-            loss = loss + key_loss
-        return CausalLMOutputWithPast(loss=loss, logits=logits, past_key_values=outputs.past_key_values, hidden_states=outputs.hidden_states)
-
+            prob = torch.softmax(logits, dim=-1)  # [B, seqlen, V]
+            key_loss = self.entropy_key_loss(prob, key_mask, weight=1.0)
+            loss = ce_loss + key_loss
+        else:
+            loss = ce_loss
+        return CausalLMOutputWithPast(loss=loss, key_loss=key_loss, ce_loss=ce_loss, logits=logits, past_key_values=outputs.past_key_values, hidden_states=outputs.hidden_states)
+        
     def entropy_key_loss(self, probs, key_mask, weight=0.1):
         """
         关键词熵最小化损失（鼓励关键词位置的输出概率更尖锐）
@@ -345,7 +351,7 @@ class MPTForCausalLM(MPTPreTrainedModel):
         # atten: [B, num_heads, seqlen_q, seqlen_k]
         # labels: [B, seqlen]
         bs, seqlen = labels.shape
-        valid_mask = labels != 0
+        valid_mask = labels != -100
         atten = atten.detach()
         atten = atten.mean(dim=1)  # [B, T, T] 平均掉head
         atten = atten.mean(dim=1)   # [B, T] 平均掉 query 维度，只留下每个 token 作为 key 被关注的程度

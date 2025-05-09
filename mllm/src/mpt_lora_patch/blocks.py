@@ -31,11 +31,11 @@ class MPTBlock(nn.Module):
         self.resid_attn_dropout = nn.Dropout(resid_pdrop)
         self.resid_ffn_dropout = nn.Dropout(resid_pdrop)
 
-    def forward(self, x: torch.Tensor, past_key_value: Optional[Tuple[torch.Tensor]]=None, attn_bias: Optional[torch.Tensor]=None, attention_mask: Optional[torch.ByteTensor]=None, is_causal: bool=True) -> Tuple[torch.Tensor, Optional[Tuple[torch.Tensor]]]:
+    def forward(self, x: torch.Tensor, past_key_value: Optional[Tuple[torch.Tensor]]=None, attn_bias: Optional[torch.Tensor]=None, attention_mask: Optional[torch.ByteTensor]=None, is_causal: bool=True, needs_weights: bool=False) -> Tuple[torch.Tensor, Optional[Tuple[torch.Tensor]]]:
         a = self.norm_1(x)
         # (b, _, past_key_value) = self.attn(a, past_key_value=past_key_value, attn_bias=attn_bias, attention_mask=attention_mask, is_causal=is_causal)
         # 添加注意力权重返回
-        (b, attn_weight, past_key_value) = self.attn(a, past_key_value=past_key_value, attn_bias=attn_bias, attention_mask=attention_mask, is_causal=is_causal)
+        (b, attn_weight, past_key_value) = self.attn(a, past_key_value=past_key_value, attn_bias=attn_bias, attention_mask=attention_mask, is_causal=is_causal, needs_weights=needs_weights)
         x = x + self.resid_attn_dropout(b)
         m = self.norm_2(x)
         n = self.ffn(m)

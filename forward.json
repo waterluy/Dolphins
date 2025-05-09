@@ -1,0 +1,9 @@
+{
+    "adapter_key_entropy_atten": 11,
+    "adapter_both_key_entropy_atten": 13,
+    "adapter_tuning": 5,
+    "adapterRes_both_key_entropy_atten": 15,
+    "adapterRes_key_entropy_atten": 14,
+    "adapterRes_tuning": 7,
+    "tmp": 5
+}

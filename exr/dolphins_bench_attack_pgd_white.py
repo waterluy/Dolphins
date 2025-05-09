@@ -34,6 +34,7 @@ from peft import (
     PeftConfig,
     PeftModel
 )
+from mllm.src.flamingo import ForwardType
 
 def setup_seed(seed):
     torch.manual_seed(seed)
@@ -103,9 +104,14 @@ def load_pretrained_modoel():
         cross_attn_every_n_layers=4,
         use_peft=True,
         peft_config=peft_config,
+        forward_type=ForwardType(FORWARDTYPE),
     )
 
-    checkpoint_path = hf_hub_download("gray311/Dolphins", "checkpoint.pt")
+    if CKPT is None:
+        checkpoint_path = hf_hub_download("gray311/Dolphins", "checkpoint.pt")
+    else:
+        checkpoint_path = CKPT
+    print('load checkpoint from:', checkpoint_path)
     model.load_state_dict(torch.load(checkpoint_path), strict=False)
     model.half().cuda()
 
@@ -212,7 +218,11 @@ if __name__ == "__main__":
     parser.add_argument('--lp', type=str, default='linf', choices=['l1', 'l2', 'linf'])
     parser.add_argument('--dire', type=str, default='pos', choices=['pos', 'neg'])
     parser.add_argument('--output', type=str, default='./results')
+    parser.add_argument('--ckpt', type=str, default=None)
+    parser.add_argument('--forward_type', type=int, default=0)
     args = parser.parse_args()
+    CKPT = args.ckpt
+    FORWARDTYPE = args.forward_type
     model, image_processor, tokenizer = load_pretrained_modoel()
     device = model.device
     model.attack = True
@@ -272,15 +282,16 @@ if __name__ == "__main__":
             generated_text = tokenizer.batch_decode(generated_tokens)
             last_answer_index = generated_text[0].rfind("<answer>")
             content_after_last_answer = generated_text[0][last_answer_index + len("<answer>"):]
+            final_answer = content_after_last_answer[:content_after_last_answer.rfind("<|endofchunk|>")]
             
             print(f"\n{video_path}\n")
-            print(f"\n\ninstruction: {instruction}\ndolphins answer: {content_after_last_answer}\n\n")
+            print(f"\n\ninstruction: {instruction}\ndolphins answer: {final_answer}\n\n")
             # 写入json行数据
             file.write(
                 json.dumps({
                     "unique_id": unique_id,
                     "task_name": task_name,
-                    "pred": content_after_last_answer,
+                    "pred": final_answer,
                     "gt": ground_truth,
                     "label": label
                 }) + "\n"
