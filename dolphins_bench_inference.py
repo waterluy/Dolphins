@@ -32,6 +32,7 @@ from peft import (
     PeftConfig,
     PeftModel
 )
+from mllm.src.flamingo import ForwardType
 
 def setup_seed(seed):
     torch.manual_seed(seed)
@@ -101,9 +102,14 @@ def load_pretrained_modoel():
         cross_attn_every_n_layers=4,
         use_peft=True,
         peft_config=peft_config,
+        forward_type=ForwardType(FORWARDTYPE),
     )
 
-    checkpoint_path = hf_hub_download("gray311/Dolphins", "checkpoint.pt")
+    if CKPT is None:
+        checkpoint_path = hf_hub_download("gray311/Dolphins", "checkpoint.pt")
+    else:
+        checkpoint_path = CKPT
+    print('load checkpoint from:', checkpoint_path)
     model.load_state_dict(torch.load(checkpoint_path), strict=False)
     model.half().cuda()
 
@@ -126,8 +132,12 @@ def get_model_inputs(video_path, instruction, model, image_processor, tokenizer)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--output', type=str, default='./results')
+    parser.add_argument('--output', type=str, default='./tmp')
+    parser.add_argument('--ckpt', type=str, default=None)
+    parser.add_argument('--forward_type', type=int, default=0)
     args = parser.parse_args()
+    CKPT = args.ckpt
+    FORWARDTYPE = args.forward_type
     model, image_processor, tokenizer = load_pretrained_modoel()
     generation_kwargs = {'max_new_tokens': 512, 'temperature': 1,
                                 'top_k': 0, 'top_p': 1, 'no_repeat_ngram_size': 3, 'length_penalty': 1,
@@ -136,9 +146,12 @@ if __name__ == "__main__":
 
     with open('playground/dolphins_bench/dolphins_benchmark.json', 'r') as file:
         data = json.load(file)
-    folder = f'{args.output}/bench_inference'
+
+    folder = args.output
+    json_path = os.path.join(folder, 'dolphin_output.json')
     os.makedirs(folder, exist_ok=True)
-    with open(os.path.join(folder, 'dolphin_output.json'), 'w') as file:
+    
+    with open(json_path, 'w') as file:
         # 遍历JSON数据
         for entry in tqdm(data):
             instruction = ''
@@ -166,6 +179,7 @@ if __name__ == "__main__":
                 lang_x=inputs["input_ids"].cuda(),
                 attention_mask=inputs["attention_mask"].cuda(),
                 num_beams=3,
+                forward_type=ForwardType(5),
                 **generation_kwargs,
             )
 
@@ -176,13 +190,17 @@ if __name__ == "__main__":
             generated_text = tokenizer.batch_decode(generated_tokens)
             last_answer_index = generated_text[0].rfind("<answer>")
             content_after_last_answer = generated_text[0][last_answer_index + len("<answer>"):]
+            final_answer = content_after_last_answer[:content_after_last_answer.rfind("<|endofchunk|>")]
+            
+            print('[Q]: ', instruction)
+            print('[A]: ', final_answer)
             
             # 写入json行数据
             file.write(
                 json.dumps({
                     "unique_id": unique_id,
                     "task_name": task_name,
-                    "pred": content_after_last_answer,
+                    "pred": final_answer,
                     "gt": ground_truth,
                     "label": label
                 }) + "\n"
