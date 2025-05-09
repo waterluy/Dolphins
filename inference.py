@@ -28,6 +28,7 @@ from peft import (
     PeftConfig,
     PeftModel
 )
+from mllm.src.flamingo import ForwardType
 
 def setup_seed(seed):
     torch.manual_seed(seed)
@@ -97,10 +98,14 @@ def load_pretrained_modoel():
         cross_attn_every_n_layers=4,
         use_peft=True,
         peft_config=peft_config,
+        forward_type=ForwardType(FORWARDTYPE),
     )
 
-    # checkpoint_path = hf_hub_download("gray311/Dolphins", "checkpoint.pt")
-    checkpoint_path = "/home/beihang/wlu/adllm/Dolphins/ckpts/results/checkpoint/checkpoint1.pt"
+    if CKPT is None:
+        checkpoint_path = hf_hub_download("gray311/Dolphins", "checkpoint.pt")
+    else:
+        checkpoint_path = CKPT
+    print('load checkpoint from:', checkpoint_path)
     model.load_state_dict(torch.load(checkpoint_path), strict=False)
     model.half().cuda()
 
@@ -122,13 +127,23 @@ def get_model_inputs(video_path, instruction, model, image_processor, tokenizer)
     return vision_x, inputs
 
 if __name__ == "__main__":
-
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--output', type=str, default='./results')
+    parser.add_argument('--ckpt', type=str, default=None)
+    parser.add_argument('--forward_type', type=int, default=0)
+    args = parser.parse_args()
+    CKPT = args.ckpt
+    FORWARDTYPE = args.forward_type
+    
     video_path = "./playground/videos/1.mp4"
+    # video_path = "playground/dolphins_bench/detailed_description/8.mp4"
     # instruction = "What should you do?"
     # instruction = "Because the light is green."
     # instruction = "Please predict what time it is?"
     instruction = "Please describe this video in detail."
     # instruction = "How should you safely drive in the current scenario?"
+    # instruction = "Please describe the scene in the video in detail."
+    # instruction = "Please Describe the video in detail."
 
     model, image_processor, tokenizer = load_pretrained_modoel()
     # tokenizer.eos_token_id = 50277
@@ -144,6 +159,7 @@ if __name__ == "__main__":
         lang_x=inputs["input_ids"].cuda(),
         attention_mask=inputs["attention_mask"].cuda(),
         num_beams=3,
+        forward_type=ForwardType(FORWARDTYPE),
         **generation_kwargs,
     )
 
@@ -152,10 +168,12 @@ if __name__ == "__main__":
         generated_tokens = generated_tokens[0]
 
     generated_text = tokenizer.batch_decode(generated_tokens)
+    last_answer_index = generated_text[0].rfind("<answer>")
+    content_after_last_answer = generated_text[0][last_answer_index + len("<answer>"):]
+    final_answer = content_after_last_answer[:content_after_last_answer.rfind("<|endofchunk|>")]
 
-    print(
-        f"Dolphin output:\n\n{generated_text}"
-    )
+    print('[Q]: ', instruction)
+    print('[A]: ', final_answer)
 
 
 

@@ -12,23 +12,17 @@ output="wlu_outputs/${folder_name}"
 mkdir -p $output
 
 # 定义可变参数范围
-eps=0.001
-steps=10
-method=adapterRes_tuning
-exp_name="${output}/${script_name}"
 ckpt="ckpts/20250509/adapterRes_tuning/llava_bddx/step_540/checkpoint540.pt"
+exp_name="${output}/${script_name}"
 
-python exr/dolphins_bench_attack_pgd_white.py \
- --output $exp_name \
- --eps "$eps" \
- --steps "$steps" \
+python inference.py \
  --ckpt "$ckpt" \
- --forward_type 7 
+ --forward_type 7
 
-python tools/dolphin_evaluate.py \
- --exp ${exp_name}/dolphin_output.json \
- --api 'aihub' \
- --gpt 'gpt-4o'
+# python tools/dolphin_evaluate.py \
+#  --exp ${exp_name}/dolphin_output.json \
+#  --api 'aihub' \
+#  --gpt 'gpt-4o'
 
 
 
