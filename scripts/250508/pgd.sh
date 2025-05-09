@@ -11,33 +11,25 @@ script_name=$(basename "$0" .sh)
 output="wlu_outputs/${folder_name}"
 mkdir -p $output
 
-lamb1=0.75
-lamb2=0.75
-lamb3=0.05
-eps=0.13
-method=adapter_tuning
-epoch=0
-ckpt="ckpts/20250508/adapter_tuning/new_checkpoint/checkpoint1.pt"
-exp_name="${output}/${method}${epoch}-${script_name}"
+# 定义可变参数范围
+eps=0.1
+steps=10
+exp_name="${output}/${script_name}"
 
-python attack/final.py \
+python exr/dolphins_bench_attack_pgd_white.py \
  --output $exp_name \
- --sup-text \
- --sup-clean \
- --sup-adj \
- --eps $eps \
- --iter 40 \
- --query 1 \
- --loss cos \
- --lamb1 $lamb1 \
- --lamb2 $lamb2 \
- --lamb3 $lamb3 \
- --ckpt $ckpt \
- --forward_type 5 
+ --eps "$eps" \
+ --steps "$steps" \
+ --forward_type 0
 
 python tools/dolphin_evaluate.py \
  --exp ${exp_name}/dolphin_output.json \
  --api 'aihub' \
  --gpt 'gpt-4o'
+
+
+
+
+
 
 

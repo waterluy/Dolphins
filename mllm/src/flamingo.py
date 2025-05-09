@@ -32,6 +32,7 @@ class ForwardType(enum.Enum):
     AdapterBothKeyEntropyAtten = 13
     AdapterResKeyEntropyAtten = 14
     AdapterResBothKeyEntropyAtten = 15
+    DefaultBothKeyEntropyAtten = 16
 
 class Flamingo(nn.Module):
     def __init__(
@@ -165,6 +166,7 @@ class Flamingo(nn.Module):
             if forward_type in [
                 ForwardType.Default,
                 ForwardType.DefaultKeyEntropyAtten,  # ?????????
+                ForwardType.DefaultBothKeyEntropyAtten,
                 ]:
                 self._encode_vision_x_original(vision_x=vision_x)
             elif forward_type in [
@@ -196,6 +198,7 @@ class Flamingo(nn.Module):
             ForwardType.AdapterBothKeyEntropyAtten,
             ForwardType.AdapterResKeyEntropyAtten,
             ForwardType.AdapterResBothKeyEntropyAtten,
+            ForwardType.DefaultBothKeyEntropyAtten,
         ]:
             output = self.lang_encoder(
                 input_ids=lang_x,
@@ -291,6 +294,7 @@ class Flamingo(nn.Module):
         if forward_type in [
             ForwardType.Default,
             ForwardType.DefaultKeyEntropyAtten,  # ?????????
+            ForwardType.DefaultBothKeyEntropyAtten,
             ]:
             self._encode_vision_x_original(vision_x=vision_x)
         elif forward_type in [
@@ -393,6 +397,7 @@ class Flamingo(nn.Module):
                 ForwardType.AdapterResBothKeyEntropyAtten,
             ]:
                 # 参数共享
+                # print(vision_x.shape)   # torch.Size([2, 5, 64, 1024])
                 vision_x = self.at_adapter(vision_x)
 
                 for layer in self.lang_encoder._get_decoder_layers():

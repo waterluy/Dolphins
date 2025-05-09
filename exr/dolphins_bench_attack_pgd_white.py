@@ -177,7 +177,7 @@ def denormalize(tensor, mean, std):
 
 def pgd_attack(model, vision_x, input_ids, attention_mask, labels=None, epsilon=0.001, steps=10, lp='linf', dire='pos'):
     noise = torch.zeros_like(vision_x).to(device).half().cuda()
-    alpha = epsilon / steps
+    alpha = 2 * epsilon / steps
     denormed_vision_x = denormalize(vision_x, image_mean, image_std)
     for _ in range(steps):
         noise.requires_grad = True
@@ -188,23 +188,16 @@ def pgd_attack(model, vision_x, input_ids, attention_mask, labels=None, epsilon=
             lang_x=input_ids.cuda(),
             attention_mask=attention_mask.cuda(),
             labels=labels.cuda(),
-            media_locations=None
+            media_locations=None,
+            forward_type=ForwardType(FORWARDTYPE),
         )[0]
         noise.grad = None
         loss.backward()
         grad = noise.grad.detach()
-        if lp == 'linf':
-            delta = grad.sign()
-        elif lp == 'l1':
-            delta = grad / torch.norm(grad, p=1)
-        elif lp == 'l2':
-            delta = grad / torch.norm(grad, p=2)
-        else:
-            raise ValueError('lp must be linf, l1 or l2')
-        if dire == 'neg':
-            noise = noise - alpha * delta
-        else:
-            noise = noise + alpha * delta
+        assert lp == 'linf'
+        delta = grad.sign()
+        assert dire == 'pos'
+        noise = noise + alpha * delta
         noise = noise.detach()
     return noise.detach()
 
@@ -225,13 +218,12 @@ if __name__ == "__main__":
     FORWARDTYPE = args.forward_type
     model, image_processor, tokenizer = load_pretrained_modoel()
     device = model.device
-    model.attack = True
 
     generation_kwargs = {'max_new_tokens': 512, 'temperature': 1,
                                 'top_k': 0, 'top_p': 1, 'no_repeat_ngram_size': 3, 'length_penalty': 1,
                                 'do_sample': False,
                                 'early_stopping': True}
-    folder = f'{args.output}/bench_attack_pgd_white_{args.lp}_eps{args.eps}_steps{args.steps}_{args.dire}'
+    folder = args.output
     os.makedirs(folder, exist_ok=True)
     json_file = os.path.join(folder, 'dolphin_output.json')
     with open('playground/dolphins_bench/dolphins_benchmark.json', 'r') as file:
@@ -272,6 +264,7 @@ if __name__ == "__main__":
                 lang_x=inputs["input_ids"].cuda(),
                 attention_mask=inputs["attention_mask"].cuda(),
                 num_beams=3,
+                forward_type=ForwardType(FORWARDTYPE),
                 **generation_kwargs,
             )
 
@@ -284,8 +277,8 @@ if __name__ == "__main__":
             content_after_last_answer = generated_text[0][last_answer_index + len("<answer>"):]
             final_answer = content_after_last_answer[:content_after_last_answer.rfind("<|endofchunk|>")]
             
-            print(f"\n{video_path}\n")
-            print(f"\n\ninstruction: {instruction}\ndolphins answer: {final_answer}\n\n")
+            print('[Q]: ', instruction)
+            print('[A]: ', final_answer)
             # 写入json行数据
             file.write(
                 json.dumps({

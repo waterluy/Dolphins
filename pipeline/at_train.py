@@ -627,7 +627,8 @@ def main():
                 ForwardType.DefaultKeyEntropyAtten,
                 ForwardType.AdapterBothKeyEntropyAtten,
                 ForwardType.AdapterResKeyEntropyAtten,
-                ForwardType.AdapterResBothKeyEntropyAtten
+                ForwardType.AdapterResBothKeyEntropyAtten,
+                ForwardType.DefaultBothKeyEntropyAtten,
             ]:
                     model.eval()
                     denorm_imgs = denormalize(images, mean, std)
@@ -673,6 +674,7 @@ def main():
                     ForwardType.AdapterWithResidualNoShare,
                     ForwardType.AdapterResBothKeyEntropyAtten,
                     ForwardType.AdapterBothKeyEntropyAtten,
+                    ForwardType.DefaultBothKeyEntropyAtten,
                 ]:
                     with torch.cuda.amp.autocast(dtype=torch.float16):
                         output = model(
@@ -700,7 +702,6 @@ def main():
                         loss = output['loss']
                 elif ForwardType(args.forward_type) in [
                     ForwardType.DefaultKeyEntropyAtten,  # default 都没有adapter, 
-                    ForwardType.DefaultBothKeyEntropyAtten,
                 ]:
                     with torch.cuda.amp.autocast(dtype=torch.float16):
                         output = model(

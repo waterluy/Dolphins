@@ -15,7 +15,7 @@ lamb1=0.75
 lamb2=0.75
 lamb3=0.05
 eps=0.13
-exp_name="${output}/${method}${epoch}-${script_name}"
+exp_name="${output}/${script_name}"
 
 python attack/final.py \
  --output $exp_name  \
