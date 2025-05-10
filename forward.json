@@ -5,5 +5,6 @@
     "adapterRes_both_key_entropy_atten": 15,
     "adapterRes_key_entropy_atten": 14,
     "adapterRes_tuning": 7,
-    "tmp": 5
+    "tmp": 5,
+    "sat": 0
 }
