@@ -433,7 +433,9 @@ if __name__ == "__main__":
     parser.add_argument('--lamb2', type=float, default=1.0)
     parser.add_argument('--lamb3', type=float, default=0.05)
     parser.add_argument('--output', type=str, default="results")
+    parser.add_argument('--clip', type=str, default="ViT-B/32", choices=["ViT-B/32", "ViT-L/14", "ViT-B/16"])
     args = parser.parse_args()
+    CLIP = args.clip
     EPS = args.eps
     ITER = args.iter
     QUERY = args.query
@@ -441,7 +443,7 @@ if __name__ == "__main__":
     LAMB1 = args.lamb1
     LAMB2 = args.lamb2
     LAMB3 = args.lamb3
-    best_records_path = 'results/bench_attack_coi-opti_eps0.2_iter20_query8/records.json'
+    best_records_path = 'best_records.json'
     best_records = []
     with open(best_records_path, 'r') as file:
         best_records = json.load(file)
@@ -480,7 +482,7 @@ if __name__ == "__main__":
     tokenizer.eos_token_id = 50277
     tokenizer.pad_token_id = 50277
     device = model.device
-    model_clip, preprocess_clip = clip.load("ViT-B/32", device=torch.device('cuda')) 
+    model_clip, preprocess_clip = clip.load(CLIP, device=torch.device('cuda')) 
     model_clip.eval()
 
     generation_kwargs = {'max_new_tokens': 512, 'temperature': 1,

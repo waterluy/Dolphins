@@ -21,4 +21,7 @@ dataset
 vis_defense
 pic
 *__pycache__*
+ckpts
+wandb
+
 
