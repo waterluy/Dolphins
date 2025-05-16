@@ -178,6 +178,8 @@ class Flamingo(nn.Module):
                 ForwardType.AdapterBothKeyEntropyAtten,
                 ForwardType.AdapterResKeyEntropyAtten,
                 ForwardType.AdapterResBothKeyEntropyAtten,
+                ForwardType.AdapterForVisual,
+                ForwardType.AdapterWithResidualForVisual,
             ]:
                 self._encode_vision_x_with_adapterwl0318(vision_x=vision_x, forward_type=forward_type)
             elif forward_type == ForwardType.Denoisewl0320:
@@ -306,6 +308,8 @@ class Flamingo(nn.Module):
             ForwardType.AdapterBothKeyEntropyAtten,
             ForwardType.AdapterResKeyEntropyAtten,
             ForwardType.AdapterResBothKeyEntropyAtten,
+            ForwardType.AdapterForVisual,
+            ForwardType.AdapterWithResidualForVisual,
         ]:
             self._encode_vision_x_with_adapterwl0318(vision_x=vision_x, forward_type=forward_type)
         else:
@@ -384,6 +388,12 @@ class Flamingo(nn.Module):
         # with torch.no_grad():
         vision_x = self.vision_encoder(vision_x)[1]
         vision_x = rearrange(vision_x, "(b T F) v d -> b T F v d", b=b, T=T, F=F)
+        if forward_type in [
+            ForwardType.AdapterForVisual,
+            ForwardType.AdapterWithResidualForVisual,
+        ]:
+            # 视觉适配器
+            vision_x = self.at_adapter(vision_x)
         vision_x = self.perceiver(vision_x)
             
         if forward_type in [
@@ -411,7 +421,13 @@ class Flamingo(nn.Module):
                 for layer in self.lang_encoder._get_decoder_layers():
                     vision_x = self.at_adapter[adapter_index](vision_x)
                     layer.condition_vis_x(vision_x)
-                    adapter_index+=1         
+                    adapter_index+=1
+        elif forward_type in [
+                    ForwardType.AdapterForVisual,
+                    ForwardType.AdapterWithResidualForVisual,
+                ]:
+            for layer in self.lang_encoder._get_decoder_layers():
+                    layer.condition_vis_x(vision_x)    
         else: 
                 raise ValueError(f"Unknown forward_type: {self.forward_type}")
             

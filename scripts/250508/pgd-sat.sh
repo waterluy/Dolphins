@@ -1,5 +1,5 @@
 #!/bin/bash
-export CUDA_VISIBLE_DEVICES=6
+export CUDA_VISIBLE_DEVICES=3
 
 # 获取脚本文件的路径
 script_dir=$(dirname "$0")
@@ -15,12 +15,14 @@ mkdir -p $output
 eps=0.1
 steps=10
 exp_name="${output}/${script_name}"
+ckpt="ckpts/20250509/sat/new_checkpoint/checkpoint2.pt"
 
-python exr/dolphins_bench_attack_pgd_white.py \
- --output $exp_name \
- --eps "$eps" \
- --steps "$steps" \
- --forward_type 0
+# python exr/dolphins_bench_attack_pgd_white.py \
+#  --output $exp_name \
+#  --eps "$eps" \
+#  --steps "$steps" \
+#     --ckpt "$ckpt" \
+#  --forward_type 0
 
 python tools/dolphin_evaluate.py \
  --exp ${exp_name}/dolphin_output.json \

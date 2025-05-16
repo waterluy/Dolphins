@@ -130,14 +130,14 @@ class BDDXDataset(VQADataset):
         self.task_type = task_type
         self.few_shot_ratio = few_shot_ratio
         self.ann_paths = ann_paths
-        self.mode = mode
+        self.mode = mode    # training
 
         self.vis_processor = DefaultTransform(image_size=image_size)
         self.add_eos = add_eos
         self.ignore_instruction = ignore_instruction
 
-        self.bos_item = torch.LongTensor([self.tokenizer.bos_token_id])
-        self.eos_item = torch.LongTensor([self.tokenizer.eos_token_id])
+        self.bos_item = torch.LongTensor([self.tokenizer.bos_token_id]) # 0
+        self.eos_item = torch.LongTensor([self.tokenizer.eos_token_id]) # 0
         self.bos_mask = torch.LongTensor([1])
         self.eos_mask = torch.LongTensor([1])
 
@@ -160,7 +160,7 @@ class BDDXDataset(VQADataset):
 
     def load_car_infos(self):
         # info_path = os.path.join("/".join(self.ann_paths[0].split("/")[:-1]), "log")
-        info_path ='/mnt/ssd2/wlu/adllm/Dolphins/datasets_part/BDDX/processed_video_info'
+        info_path ='/data/wlu/Dolphins/datasets_part/BDDX/processed_video_info'
         self.car_infos = {}
         for file in tqdm(os.listdir(info_path), desc="[Get Car Info]"):
             file_path = os.path.join(info_path, file)
@@ -456,7 +456,9 @@ class BDDXDataset(VQADataset):
 
     def __len__(self):
         return len(self.samples)
-
+    # 每个sample的文本token序列没有填充到固定的相同长度
+    # 只在token的最前面加了bos_token，最后加了eos_token
+    # 但是在batch的时候会填充到相同长度
     def __getitem__(self, index):
         ann = self.samples[index]
         if 'in_context_ids' in ann.keys():
@@ -475,10 +477,12 @@ class BDDXDataset(VQADataset):
         return res
 
     def tokenize(self, text):
+        # res['input_ids'],res['attention_mask']  [1, 122] 
         res = self.tokenizer(text["conversation"], return_tensors="pt", padding="do_not_pad", truncation=True,
                              max_length=self.max_seq_length, add_special_tokens=False)
         if self.mode == "training":
             res["input_ids"] = torch.cat([self.bos_item, res["input_ids"].squeeze(0), self.eos_item]).unsqueeze(0)
+            # [1, 124]
             res["attention_mask"] = torch.cat([self.bos_mask, res["attention_mask"].squeeze(0), self.eos_mask]).unsqueeze(0)
         else:
             res["input_ids"] = res["input_ids"]

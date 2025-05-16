@@ -24,8 +24,8 @@ inst_datasets = [
 alignment_datasets = [
     dict(
         type="bddx",
-        vis_root="/mnt/ssd2/wlu/adllm/Dolphins/datasets_part/BDDX/frame_tsv_part/training_32frames_img_size256.img.tsv",
-        ann_paths=["/mnt/ssd2/wlu/adllm/Dolphins/captions_BDDX_clean.json"],
+        vis_root="/data/wlu/Dolphins/datasets_part/BDDX/frame_tsv_part/training_32frames_img_size256.img.tsv",
+        ann_paths=["/data/wlu/Dolphins/captions_BDDX_clean.json"],
         max_seq_length=256,
         sample=50000,
     ),

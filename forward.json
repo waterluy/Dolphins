@@ -6,5 +6,7 @@
     "adapterRes_key_entropy_atten": 14,
     "adapterRes_tuning": 7,
     "tmp": 5,
-    "sat": 0
+    "sat": 0,
+    "adapterRes4visual": 117,
+    "sat_key_entropy_atten": 12
 }

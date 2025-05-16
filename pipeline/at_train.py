@@ -629,6 +629,8 @@ def main():
                 ForwardType.AdapterResKeyEntropyAtten,
                 ForwardType.AdapterResBothKeyEntropyAtten,
                 ForwardType.DefaultBothKeyEntropyAtten,
+                ForwardType.AdapterForVisual,
+                ForwardType.AdapterWithResidualForVisual,
             ]:
                     model.eval()
                     denorm_imgs = denormalize(images, mean, std)
@@ -675,6 +677,8 @@ def main():
                     ForwardType.AdapterResBothKeyEntropyAtten,
                     ForwardType.AdapterBothKeyEntropyAtten,
                     ForwardType.DefaultBothKeyEntropyAtten,
+                    ForwardType.AdapterForVisual,
+                    ForwardType.AdapterWithResidualForVisual,
                 ]:
                     with torch.cuda.amp.autocast(dtype=torch.float16):
                         output = model(
