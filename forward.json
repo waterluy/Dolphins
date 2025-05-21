@@ -11,5 +11,6 @@
     "sat_key_entropy_atten": 12,
     "sat_both_key_entropy_atten": 16,
     "visualat_both": 16,
-    "adat_both": 16
+    "adat_both": 16,
+    "adapterResNoshare_both_key_entropy_atten": 18
 }

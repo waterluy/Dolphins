@@ -31,6 +31,8 @@ class ForwardType(enum.Enum):
     AdapterResKeyEntropyAtten = 14
     AdapterResBothKeyEntropyAtten = 15
     DefaultBothKeyEntropyAtten = 16
+    AdapterNoShareBothKeyEntropyAtten = 17
+    AdapterWithResidualNoShareBothKeyEntropyAtten = 18
 
 class Flamingo(nn.Module):
     def __init__(
@@ -85,13 +87,19 @@ class Flamingo(nn.Module):
         ]:
             print("forward_type:", forward_type)
             self.at_adapter = AdapterWithResidual(config=AdapterConfig(d_model=self.vis_dim))
-        if forward_type in [ForwardType.AdapterNoShare]:
+        if forward_type in [
+            ForwardType.AdapterNoShare,
+            ForwardType.AdapterNoShareBothKeyEntropyAtten
+        ]:
             # adapter 参数不共享
             print("forward_type:", forward_type)
             self.at_adapter = nn.ModuleList(
                 [Adapter(config=AdapterConfig(d_model=self.vis_dim)) for _ in range(self.lang_encoder._get_decoder_layers())]
             )
-        if forward_type in [ForwardType.AdapterWithResidualNoShare]:
+        if forward_type in [
+            ForwardType.AdapterWithResidualNoShare,
+            ForwardType.AdapterWithResidualNoShareBothKeyEntropyAtten
+        ]:
             # adapter 参数不共享
             print("forward_type:", forward_type)
             self.at_adapter = nn.ModuleList(
@@ -171,7 +179,9 @@ class Flamingo(nn.Module):
                 ForwardType.Adapterwl0318, 
                 ForwardType.AdapterWithResidual,
                 ForwardType.AdapterNoShare,
+                ForwardType.AdapterNoShareBothKeyEntropyAtten,
                 ForwardType.AdapterWithResidualNoShare, 
+                ForwardType.AdapterWithResidualNoShareBothKeyEntropyAtten, 
                 ForwardType.AdapterKeyEntropyAtten, #主要在lang_encoder中修改
                 ForwardType.AdapterBothKeyEntropyAtten,
                 ForwardType.AdapterResKeyEntropyAtten,
@@ -199,6 +209,8 @@ class Flamingo(nn.Module):
             ForwardType.AdapterResKeyEntropyAtten,
             ForwardType.AdapterResBothKeyEntropyAtten,
             ForwardType.DefaultBothKeyEntropyAtten,
+            ForwardType.AdapterNoShareBothKeyEntropyAtten,
+            ForwardType.AdapterWithResidualNoShareBothKeyEntropyAtten,
         ]:
             output = self.lang_encoder(
                 input_ids=lang_x,
@@ -300,6 +312,8 @@ class Flamingo(nn.Module):
             ForwardType.AdapterWithResidual,
             ForwardType.AdapterNoShare,
             ForwardType.AdapterWithResidualNoShare, 
+            ForwardType.AdapterNoShareBothKeyEntropyAtten,
+            ForwardType.AdapterWithResidualNoShareBothKeyEntropyAtten, 
             ForwardType.AdapterKeyEntropyAtten, #主要在lang_encoder中修改
             ForwardType.AdapterBothKeyEntropyAtten,
             ForwardType.AdapterResKeyEntropyAtten,
@@ -408,7 +422,9 @@ class Flamingo(nn.Module):
                     layer.condition_vis_x(vision_x)           
         elif forward_type in [
                 ForwardType.AdapterNoShare,
+                ForwardType.AdapterNoShareBothKeyEntropyAtten,
                 ForwardType.AdapterWithResidualNoShare,
+                ForwardType.AdapterWithResidualNoShareBothKeyEntropyAtten,
             ]:
                 # 参数不共享
                 adapter_index=0
