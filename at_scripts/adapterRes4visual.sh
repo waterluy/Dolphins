@@ -1,7 +1,7 @@
 #!/usr/bin/bash
-export CUDA_VISIBLE_DEVICES=4,5,6,7
+export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6
 
-GPU_NUM=4
+GPU_NUM=7
 JSON_FILE="forward.json"
 
 # 获取当前日期，格式为YYYYMMDD
@@ -26,9 +26,9 @@ accelerate launch --mixed_precision "no" --multi_gpu \
  pipeline/at_train.py \
  --use_lora \
  --output_dir $OUTPUT_DIR \
- --per_device_train_batch_size 1 \
+ --per_device_train_batch_size 2 \
  --num_train_epochs 1 \
  --at_iter 10 \
- --at_eps_imgs 0.04 \
+ --at_eps_imgs 0.1 \
  --forward_type $FORWARD_TYPE
 

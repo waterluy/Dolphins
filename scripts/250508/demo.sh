@@ -1,5 +1,5 @@
 #!/bin/bash
-export CUDA_VISIBLE_DEVICES=3
+export CUDA_VISIBLE_DEVICES=7
 
 # 获取脚本文件的路径
 script_dir=$(dirname "$0")
@@ -12,7 +12,7 @@ output="wlu_outputs/${folder_name}"
 mkdir -p $output
 
 # 定义可变参数范围
-ckpt="ckpts/20250509/sat/llava_bddx/step_540/checkpoint540.pt"
+ckpt="ckpts/20250509/sat/new_checkpoint/checkpoint2.pt"
 exp_name="${output}/${script_name}"
 
 python inference.py \
