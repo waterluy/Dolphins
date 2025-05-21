@@ -25,8 +25,6 @@ class ForwardType(enum.Enum):
     AdapterWithResidualNoShare = 107
     AdapterForVisual = 115
     AdapterWithResidualForVisual = 117
-    AdapterWeightLoss = 9
-    AdapterKeyLoss = 10
     AdapterKeyEntropyAtten = 11
     DefaultKeyEntropyAtten = 12
     AdapterBothKeyEntropyAtten = 13
@@ -72,8 +70,8 @@ class Flamingo(nn.Module):
         self.forward_type = forward_type
         if forward_type in [
             ForwardType.Adapterwl0318, ForwardType.Adapter2attack,
-            ForwardType.AdapterForVisual, ForwardType.AdapterWeightLoss,
-            ForwardType.AdapterKeyLoss, ForwardType.AdapterKeyEntropyAtten,
+            ForwardType.AdapterForVisual, 
+            ForwardType.AdapterKeyEntropyAtten,
             ForwardType.AdapterBothKeyEntropyAtten,
         ]:
             print("forward_type:", forward_type)
@@ -222,8 +220,6 @@ class Flamingo(nn.Module):
             ForwardType.AdapterWithResidualNoShare,
             ForwardType.AdapterForVisual,
             ForwardType.AdapterWithResidualForVisual,
-            ForwardType.AdapterWeightLoss,
-            ForwardType.AdapterKeyLoss,
         ]:
             output = self.lang_encoder(
                 input_ids=lang_x,
@@ -399,8 +395,6 @@ class Flamingo(nn.Module):
         if forward_type in [
                 ForwardType.Adapterwl0318,
                 ForwardType.AdapterWithResidual,
-                ForwardType.AdapterWeightLoss,
-                ForwardType.AdapterKeyLoss,
                 ForwardType.AdapterKeyEntropyAtten, #主要在lang_encoder中修改
                 ForwardType.AdapterBothKeyEntropyAtten,
                 ForwardType.AdapterResKeyEntropyAtten,

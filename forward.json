@@ -8,5 +8,8 @@
     "tmp": 5,
     "sat": 0,
     "adapterRes4visual": 117,
-    "sat_key_entropy_atten": 12
+    "sat_key_entropy_atten": 12,
+    "sat_both_key_entropy_atten": 16,
+    "visualat_both": 16,
+    "adat_both": 16
 }

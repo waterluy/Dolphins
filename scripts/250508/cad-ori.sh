@@ -16,6 +16,11 @@ lamb2=0.75
 lamb3=0.05
 eps=0.13
 exp_name="${output}/${script_name}"
+json_file="test.json"
+# 使用jq解析JSON文件
+key_name=${script_name#*-}
+FORWARD_TYPE=$(jq -r ".${key_name}[0]" "$json_file")
+# ckpt=$(jq -r ".${key_name}[1]" "$json_file")
 
 python attack/final.py \
  --output $exp_name  \
@@ -29,7 +34,7 @@ python attack/final.py \
  --lamb1 $lamb1 \
  --lamb2 $lamb2 \
  --lamb3 $lamb3 \
- --forward_type 0
+ --forward_type $FORWARD_TYPE
 
 python tools/dolphin_evaluate.py \
  --exp ${exp_name}/dolphin_output.json \

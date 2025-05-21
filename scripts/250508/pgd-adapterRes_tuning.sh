@@ -16,14 +16,18 @@ eps=0.001
 steps=10
 method=adapterRes_tuning
 exp_name="${output}/${script_name}"
-ckpt="ckpts/20250509/adapterRes_tuning/llava_bddx/step_540/checkpoint540.pt"
+json_file="test.json"
+# 使用jq解析JSON文件
+key_name=${script_name#*-}
+FORWARD_TYPE=$(jq -r ".${key_name}[0]" "$json_file")
+ckpt=$(jq -r ".${key_name}[1]" "$json_file")
 
 python exr/dolphins_bench_attack_pgd_white.py \
  --output $exp_name \
  --eps "$eps" \
  --steps "$steps" \
  --ckpt "$ckpt" \
- --forward_type 7 
+ --forward_type $FORWARD_TYPE
 
 python tools/dolphin_evaluate.py \
  --exp ${exp_name}/dolphin_output.json \

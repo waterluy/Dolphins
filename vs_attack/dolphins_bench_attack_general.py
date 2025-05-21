@@ -38,6 +38,7 @@ import pickle
 from torchvision import transforms
 from PIL import Image
 from tools.run_tools import dump_args
+from mllm.src.flamingo import ForwardType
 
 def setup_seed(seed):
     torch.manual_seed(seed)
@@ -107,8 +108,14 @@ def load_pretrained_modoel():
         cross_attn_every_n_layers=4,
         use_peft=True,
         peft_config=peft_config,
+        forward_type=ForwardType(FORWARDTYPE),
     )
 
+    if CKPT is None:
+        checkpoint_path = hf_hub_download("gray311/Dolphins", "checkpoint.pt")
+    else:
+        checkpoint_path = CKPT
+    print('load checkpoint from:', checkpoint_path)
     checkpoint_path = hf_hub_download("gray311/Dolphins", "checkpoint.pt")
     model.load_state_dict(torch.load(checkpoint_path), strict=False)
     model.half().cuda()
@@ -161,18 +168,23 @@ def get_noise(noise_path):
     return transform(image)
 
 method2noise = {
-    'advclip': '/home/beihang/wlu/vlmattack/AdvClip/uap_gan_94.38_1.png',
-    'anyattack': '/home/beihang/wlu/vlmattack/AnyAttack/noise_0.06.png',
-    'sga': '/home/beihang/wlu/vlmattack/SGA/noise.png',
-    'vlpattack': '/home/beihang/wlu/vlmattack/VLPTransferAttack/noise.png',
-    'advlm': '/home/beihang/wlu/adllm/Dolphins/black/dolphin_advlm_linf_eps0.1_steps50_pos.png'
+    'advclip': '/home/ubuntu/wlu/black/advclip/uap_gan_94.38_1.png',
+    'anyattack': '/home/ubuntu/wlu/black/anyattack/noise_0.06.png',
+    'sga': '/home/ubuntu/wlu/black/sga/noise.png',
+    'vlpattack': '/home/ubuntu/wlu/black/vlpattack/noise.png',
+    'advlm': '/home/beihang/wlu/adllm/Dolphins/black/dolphin_advlm_linf_eps0.1_steps50_pos.png',
+    'attackvlm': '/home/ubuntu/wlu/black/attackvlm/noise_drivelm.jpg',
 }
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--method', type=str, default='advclip', choices=['advclip', 'anyattack', 'sga', 'vlpattack', 'advlm'])
+    parser.add_argument('--method', type=str, default='advclip', choices=['advclip', 'anyattack', 'sga', 'vlpattack', 'advlm', 'attackvlm'])
     parser.add_argument('--output', type=str, default='./results_vs')
+    parser.add_argument('--ckpt', type=str, default=None)
+    parser.add_argument('--forward_type', type=int, default=0)
     args = parser.parse_args()
+    CKPT = args.ckpt
+    FORWARDTYPE = args.forward_type
     noise = get_noise(noise_path=method2noise[args.method])
     print(noise.shape)
 
@@ -186,7 +198,7 @@ if __name__ == "__main__":
                                 'do_sample': False,
                                 'early_stopping': True}
     
-    folder = os.path.join(args.output, args.method)
+    folder = args.output
     os.makedirs(folder, exist_ok=True)
     dump_args(folder=folder, args=args)
     json_file = os.path.join(folder, 'dolphin_output.json')
@@ -222,6 +234,7 @@ if __name__ == "__main__":
                 lang_x=inputs["input_ids"].cuda(),
                 attention_mask=inputs["attention_mask"].cuda(),
                 num_beams=3,
+                forward_type=ForwardType(FORWARDTYPE),
                 **generation_kwargs,
             )
 

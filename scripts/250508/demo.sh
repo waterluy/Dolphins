@@ -12,12 +12,12 @@ output="wlu_outputs/${folder_name}"
 mkdir -p $output
 
 # 定义可变参数范围
-ckpt="ckpts/20250509/sat/new_checkpoint/checkpoint2.pt"
+ckpt="ckpts/20250521/adapterRes_tuning/llava_bddx/step_720/checkpoint720.pt"
 exp_name="${output}/${script_name}"
 
 python inference.py \
  --ckpt "$ckpt" \
- --forward_type 0
+ --forward_type 7
 
 # python tools/dolphin_evaluate.py \
 #  --exp ${exp_name}/dolphin_output.json \

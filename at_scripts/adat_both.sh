@@ -23,7 +23,7 @@ fi
 
 accelerate launch --multi_gpu \
  --num_processes $GPU_NUM \
-pipeline/sat_train.py \
+pipeline/adat_train.py \
  --use_lora \
  --output_dir $OUTPUT_DIR \
   --per_device_train_batch_size 2 \
