@@ -17,7 +17,7 @@ FORWARD_TYPE=$(jq -r ".${key_name}[0]" "$json_file")
 ckpt=$(jq -r ".${key_name}[1]" "$json_file")
 
 # 定义要遍历的methods列表
-methods=("advclip" "anyattack" "sga" "vlpattack" "") 
+methods=("advclip" "anyattack" "sga" "vlpattack" "attackvlm") 
 
 # 遍历每个method
 for method in "${methods[@]}"; do

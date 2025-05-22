@@ -2,7 +2,10 @@
     "adapter_key_entropy_atten": 11,
     "adapter_both_key_entropy_atten": 13,
     "adapter_tuning": 5,
-    "adapterRes_both_key_entropy_atten": 15,
+    "adapterRes_both_key_entropy_atten": [
+        15,
+        "ckpts/20250522/sat/llava_bddx/step_720/checkpoint720.pt"
+    ],
     "adapterRes_key_entropy_atten": 14,
     "adapterRes_tuning": [
         7,
