@@ -2,6 +2,7 @@ import torch.nn as nn
 import torch
 from .helpers import GatedCrossAttentionBlock
 from .utils import getattr_recursive, setattr_recursive
+import torch.nn.functional as F
 
 
 class FlamingoLayer(nn.Module):
@@ -135,7 +136,13 @@ class FlamingoLMMixin(nn.Module):
 
         if media_locations is None:
             media_locations = input_ids == self.media_token_id
-        if input_ids is not None:
+            if "prompt_embeddings" in kwargs.keys() and kwargs["prompt_embeddings"] is not None:
+                media_locations = F.pad(
+                    media_locations, 
+                    (kwargs["prompt_embeddings"].shape[0], 0), 
+                    value=False
+                )  # [B, prompt_length + T_txt]
+        if input_ids is not None and "prompt_embeddings" not in kwargs.keys():
             assert input_ids.shape[0] == media_locations.shape[0]
             assert input_ids.shape[1] == media_locations.shape[1]
         if inputs_embeds is not None:

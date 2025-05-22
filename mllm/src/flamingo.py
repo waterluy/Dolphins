@@ -12,6 +12,7 @@ from torch.distributed.fsdp import (
 )
 import enum
 from .utils import apply_with_stopping_condition
+import torch.nn.functional as F
 from .adapter_utils import AdapterConfig, Adapter, AdapterWithLayerNorm, AdapterWithResidual
   
 class ForwardType(enum.Enum):
@@ -33,6 +34,7 @@ class ForwardType(enum.Enum):
     DefaultBothKeyEntropyAtten = 16
     AdapterNoShareBothKeyEntropyAtten = 17
     AdapterWithResidualNoShareBothKeyEntropyAtten = 18
+    AdvPT = 19
 
 class Flamingo(nn.Module):
     def __init__(
@@ -105,6 +107,17 @@ class Flamingo(nn.Module):
             self.at_adapter = nn.ModuleList(
                 [AdapterWithResidual(config=AdapterConfig(d_model=self.vis_dim)) for _ in range(self.lang_encoder._get_decoder_layers())]
             )
+        if forward_type in [
+            ForwardType.AdvPT,
+        ]:
+            print("forward_type:", forward_type)
+            # Prompt Tuning 参数
+            self.prompt_length = 10  # 可调节的prompt token数量
+            self.prompt_embed_dim = 4096  # 与模型隐藏层一致
+            self.prompt_embeddings = nn.Parameter(
+                torch.randn(self.prompt_length, self.prompt_embed_dim),
+                requires_grad=True
+            )
         
         self.lang_encoder = lang_encoder
         self.lang_encoder.init_flamingo(
@@ -173,7 +186,8 @@ class Flamingo(nn.Module):
                 ForwardType.Default,
                 ForwardType.DefaultKeyEntropyAtten,  # ?????????
                 ForwardType.DefaultBothKeyEntropyAtten,
-                ]:
+                ForwardType.AdvPT,
+            ]:
                 self._encode_vision_x_original(vision_x=vision_x)
             elif forward_type in [
                 ForwardType.Adapterwl0318, 
@@ -240,6 +254,18 @@ class Flamingo(nn.Module):
                 media_locations=media_locations,
                 past_key_values=past_key_values,
                 use_cache=use_cache,
+            )
+        elif forward_type in [
+            ForwardType.AdvPT,
+        ]:
+            output = self.lang_encoder(
+                input_ids=lang_x,
+                attention_mask=attention_mask,
+                labels=labels,
+                media_locations=media_locations,
+                past_key_values=past_key_values,
+                use_cache=use_cache,
+                prompt_embeddings=self.prompt_embeddings,
             )
         else:
             raise NotImplementedError(
@@ -533,6 +559,15 @@ class Flamingo(nn.Module):
             param.requires_grad = False
         for param in self.lang_encoder.parameters():
             param.requires_grad = False
+            
+    def set_promtp_tuning(self):
+        for param in self.vision_encoder.parameters():
+            param.requires_grad = False      
+        for param in self.perceiver.parameters():
+            param.requires_grad = False
+        for param in self.lang_encoder.parameters():
+            param.requires_grad = False
+        self.prompt_embeddings.requires_grad = True
 
     def wrap_fsdp(self, wrapper_kwargs, device_id):
         """
@@ -643,6 +678,15 @@ class Flamingo(nn.Module):
                 shape (B, T_txt)
         """
         media_locations = input_ids == self.media_token_id
+        
+        if self.forward_type in [
+            ForwardType.AdvPT,
+        ]:
+            media_locations = F.pad(
+                media_locations, 
+                (self.prompt_length, 0), 
+                value=False
+            )  # [B, prompt_length + T_txt]
 
         for layer in self.lang_encoder._get_decoder_layers():
             layer.condition_media_locations(media_locations)

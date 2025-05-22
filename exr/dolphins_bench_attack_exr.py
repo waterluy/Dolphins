@@ -36,6 +36,7 @@ from peft import (
 )
 from tools.gpt_gen_multq import gen_multi_version
 import torchvision.transforms as transforms
+from mllm.src.flamingo import ForwardType
 
 def setup_seed(seed):
     torch.manual_seed(seed)
@@ -105,8 +106,14 @@ def load_pretrained_modoel():
         cross_attn_every_n_layers=4,
         use_peft=True,
         peft_config=peft_config,
+        forward_type=ForwardType(FORWARDTYPE),
     )
 
+    if CKPT is None:
+        checkpoint_path = hf_hub_download("gray311/Dolphins", "checkpoint.pt")
+    else:
+        checkpoint_path = CKPT
+    print('load checkpoint from:', checkpoint_path)
     checkpoint_path = hf_hub_download("gray311/Dolphins", "checkpoint.pt")
     model.load_state_dict(torch.load(checkpoint_path), strict=False)
     model.half().cuda()
@@ -199,6 +206,7 @@ def exr_attack(model, vision_x, input_ids_list, attention_mask_list, labels_list
             lang_x=input_ids_list[idx].cuda(),
             attention_mask=attention_mask_list[idx].cuda(),
             labels=labels_list[idx].cuda(),
+            forward_type=ForwardType(FORWARDTYPE),
             media_locations=None
         )[0]
         noise.grad = None
@@ -232,7 +240,11 @@ if __name__ == "__main__":
     parser.add_argument('--method', type=int, default=4, choices=[0, 2, 3, 4])
     parser.add_argument('--affine', action='store_true')
     parser.add_argument('--output', type=str, default='./results')
+    parser.add_argument('--ckpt', type=str, default=None)
+    parser.add_argument('--forward_type', type=int, default=0)
     args = parser.parse_args()
+    CKPT = args.ckpt
+    FORWARDTYPE = args.forward_type
     model, image_processor, tokenizer = load_pretrained_modoel()
     device = model.device
     model.attack = True
@@ -243,7 +255,7 @@ if __name__ == "__main__":
                                 'early_stopping': True}
     METHOD = int(args.method)
     houzhui = '_multi_woori'
-    folder = f'{args.output}/bench_attack_m{METHOD}-{args.affine}_white_{args.lp}_eps{args.eps}_steps{args.steps}_samples{args.samples}_{args.dire}'
+    folder = args.output
     os.makedirs(folder, exist_ok=True)
     json_file = os.path.join(folder, 'dolphin_output.json')
     bench_path, version_num = gen_multi_version(samples=args.samples, houzhui=houzhui)
@@ -268,8 +280,6 @@ if __name__ == "__main__":
                     multi_version_instructions = conversation['value']['multi_version']
                 elif conversation['from'] == 'gpt':
                     ground_truth = conversation['value']
-            if unique_id != 'weather_4_testing_24f43441-d9d62b52_24021':
-                continue
 
             tokenizer.eos_token_id = 50277
             tokenizer.pad_token_id = 50277
@@ -292,6 +302,7 @@ if __name__ == "__main__":
                 lang_x=inputs["input_ids"].cuda(),
                 attention_mask=inputs["attention_mask"].cuda(),
                 num_beams=3,
+                forward_type=ForwardType(FORWARDTYPE),
                 **generation_kwargs,
             )
 

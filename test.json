@@ -4,15 +4,30 @@
     "adapter_tuning": 5,
     "adapterRes_both_key_entropy_atten": 15,
     "adapterRes_key_entropy_atten": 14,
-    "adapterRes_tuning": 7,
-    "tmp": [
-        0, 
-        "gray311/Dolphins"
+    "adapterRes_tuning": [
+        7,
+        "ckpts/20250521/adapterRes_tuning/new_checkpoint/checkpoint0.pt"
     ],
     "sat": 0,
     "adapterRes4visual": 117,
     "sat_key_entropy_atten": 12,
     "ori": [
+        0, 
+        "gray311/Dolphins"
+    ],
+    "visualat_both": [
+        16
+    ],
+    "adat_both": [
+        16
+    ],
+    "adapterResNoshare_both_key_entropy_atten": [
+        18
+    ],
+    "advpt": [
+        19
+    ],
+    "tmp": [
         0, 
         "gray311/Dolphins"
     ]

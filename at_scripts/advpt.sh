@@ -1,6 +1,6 @@
 #!/usr/bin/bash
-export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6
-
+# export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6
+export CUDA_VISIBLE_DEVICES=7
 GPU_NUM=7
 JSON_FILE="forward.json"
 
@@ -21,13 +21,14 @@ if [ -z "$FORWARD_TYPE" ] || [ "$FORWARD_TYPE" == "null" ]; then
   exit 1
 fi
 
-accelerate launch --mixed_precision "no" --multi_gpu \
- --num_processes $GPU_NUM \
- pipeline/sat_train.py \
+# accelerate launch --mixed_precision "no" --multi_gpu \
+#  --num_processes $GPU_NUM \
+python \
+ pipeline/advpt.py \
  --use_lora \
  --output_dir $OUTPUT_DIR \
- --per_device_train_batch_size 1 \
- --num_train_epochs 1 \
+ --per_device_train_batch_size 2 \
+ --num_train_epochs 3 \
  --at_iter 10 \
  --at_eps_imgs 0.1 \
  --forward_type $FORWARD_TYPE

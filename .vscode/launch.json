@@ -10,12 +10,13 @@
             "type": "debugpy",
             "request": "launch",
             "program": "pipeline/at_train.py",
+            // "program": "pipeline/advpt.py",
             "console": "integratedTerminal",
             "cwd": "${workspaceFolder}",
             "justMyCode": false,
             "purpose": ["debug-in-terminal"],
             "env": {
-                "CUDA_VISIBLE_DEVICES": "4",
+                "CUDA_VISIBLE_DEVICES": "7",
             },
             "args": [
                 "--use_lora",
@@ -23,7 +24,7 @@
                 "--per_device_train_batch_size", "2",
                 "--at_iter", "10",
                 "--at_eps_imgs", "0.1",
-                "--forward_type", "13",
+                "--forward_type", "15",
             ]
         }
     ]

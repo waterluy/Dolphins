@@ -471,15 +471,13 @@ def main():
                 "weight_decay": 0.001,
             },
         ]
-        
-    # 设置model参数
-    model.set_grad_adapter0318()
 
+    model.set_promtp_tuning()
     optimizer = torch.optim.AdamW(get_grouped_params(model), lr=args.learning_rate,eps=1e-3)
 
     # Scheduler and math around the number of training steps.
     overrode_max_train_steps = False
-    num_update_steps_per_epoch = math.ceil(
+    num_update_steps_per_epoch = math.ceil( 
         len(train_dataloader) / args.gradient_accumulation_steps)
     if args.max_train_steps < 0:
         args.max_train_steps = args.num_train_epochs * num_update_steps_per_epoch
@@ -618,21 +616,7 @@ def main():
                 media_locations = torch.cat((prefix_labels, input_ids), dim=1) == media_token_id
             # 加入噪声
             if ForwardType(args.forward_type) in [
-                ForwardType.Default,
-                ForwardType.Adapterwl0318,
-                ForwardType.AdapterWithResidual,
-                ForwardType.AdapterNoShare,
-                ForwardType.AdapterWithResidualNoShare,
-                ForwardType.AdapterNoShareBothKeyEntropyAtten,
-                ForwardType.AdapterWithResidualNoShareBothKeyEntropyAtten,
-                ForwardType.AdapterKeyEntropyAtten,
-                ForwardType.DefaultKeyEntropyAtten,
-                ForwardType.AdapterBothKeyEntropyAtten,
-                ForwardType.AdapterResKeyEntropyAtten,
-                ForwardType.AdapterResBothKeyEntropyAtten,
-                ForwardType.DefaultBothKeyEntropyAtten,
-                ForwardType.AdapterForVisual,
-                ForwardType.AdapterWithResidualForVisual,
+                ForwardType.AdvPT,
             ]:
                     model.eval()
                     denorm_imgs = denormalize(images, mean, std)
@@ -671,18 +655,7 @@ def main():
             with accelerator.accumulate(model):
                 # print("labels", labels)
                 if ForwardType(args.forward_type) in [
-                    ForwardType.Default,
-                    ForwardType.Adapterwl0318,
-                    ForwardType.AdapterWithResidual,
-                    ForwardType.AdapterNoShare,
-                    ForwardType.AdapterWithResidualNoShare,
-                    ForwardType.AdapterNoShareBothKeyEntropyAtten,
-                    ForwardType.AdapterWithResidualNoShareBothKeyEntropyAtten,
-                    ForwardType.AdapterResBothKeyEntropyAtten,
-                    ForwardType.AdapterBothKeyEntropyAtten,
-                    ForwardType.DefaultBothKeyEntropyAtten,
-                    ForwardType.AdapterForVisual,
-                    ForwardType.AdapterWithResidualForVisual,
+                    ForwardType.AdvPT,
                 ]:
                     with torch.cuda.amp.autocast(dtype=torch.float16):
                         output = model(
@@ -692,33 +665,6 @@ def main():
                             labels=labels,
                             media_locations=media_locations,
                             forward_type=ForwardType(args.forward_type),
-                        )
-                        loss = output['loss']
-                elif ForwardType(args.forward_type) in [
-                    ForwardType.AdapterKeyEntropyAtten,
-                    ForwardType.AdapterResKeyEntropyAtten,
-                ]:
-                    with torch.cuda.amp.autocast(dtype=torch.float16):
-                        output = model(
-                            vision_x=images.half(),
-                            lang_x=input_ids,
-                            attention_mask=attention_mask,
-                            labels=labels,
-                            media_locations=media_locations,
-                            forward_type=ForwardType.Adapterwl0318,
-                        )
-                        loss = output['loss']
-                elif ForwardType(args.forward_type) in [
-                    ForwardType.DefaultKeyEntropyAtten,  # default 都没有adapter, 
-                ]:
-                    with torch.cuda.amp.autocast(dtype=torch.float16):
-                        output = model(
-                            vision_x=images.half(),
-                            lang_x=input_ids,
-                            attention_mask=attention_mask,
-                            labels=labels,
-                            media_locations=media_locations,
-                            forward_type=ForwardType.Default,
                         )
                         loss = output['loss']
                 else:

@@ -134,7 +134,8 @@ class MPTModel(MPTPreTrainedModel):
         attn_bias = attn_bias.masked_fill(cannot_attend, min_val)
         return attn_bias
 
-    def forward(self, input_ids: torch.LongTensor, past_key_values: Optional[List[Tuple[torch.FloatTensor]]]=None, attention_mask: Optional[torch.ByteTensor]=None, prefix_mask: Optional[torch.ByteTensor]=None, sequence_id: Optional[torch.LongTensor]=None, return_dict: Optional[bool]=None, output_attentions: Optional[bool]=None, output_hidden_states: Optional[bool]=None, use_cache: Optional[bool]=None, inputs_embeds: Optional[torch.FloatTensor] = None):
+    def forward(self, input_ids: torch.LongTensor, past_key_values: Optional[List[Tuple[torch.FloatTensor]]]=None, attention_mask: Optional[torch.ByteTensor]=None, prefix_mask: Optional[torch.ByteTensor]=None, sequence_id: Optional[torch.LongTensor]=None, return_dict: Optional[bool]=None, output_attentions: Optional[bool]=None, output_hidden_states: Optional[bool]=None, use_cache: Optional[bool]=None, inputs_embeds: Optional[torch.FloatTensor] = None,
+                needs_weights: Optional[bool]=False, prompt_embeddings: Optional[nn.Parameter]=None):
         return_dict = return_dict if return_dict is not None else self.config.return_dict
         use_cache = use_cache if use_cache is not None else self.config.use_cache
         if self.gradient_checkpointing and self.training:
@@ -168,9 +169,27 @@ class MPTModel(MPTPreTrainedModel):
             tok_emb = self.wte(input_ids)
         else:
             tok_emb = inputs_embeds
+        
+        # 添加 prompt tuning
+        if prompt_embeddings is not None:
+            batch_size = tok_emb.size(0)
+            prompts = prompt_embeddings.unsqueeze(0).expand(batch_size, -1, -1)  # [batch, prompt_len, hidden]
+            tok_emb = torch.cat([prompts, tok_emb], dim=1)  # [batch, prompt_len+seq_len, hidden]
+            # 调整attention_mask以包含prompt位置
+            prompt_mask = torch.ones(
+                (batch_size, prompts.size(1)), 
+                dtype=attention_mask.dtype,
+                device=attention_mask.device
+            )
+            attention_mask = torch.cat([prompt_mask, attention_mask], dim=1)
+            # 更新序列长度（影响后续位置编码）
+            seq_length = seq_length + prompts.size(1)
+            seq_length_with_past = seq_length + past_key_values_length
 
         if prefix_mask is not None:
             prefix_mask = prefix_mask.bool()
+            if prompt_embeddings is not None:
+                prefix_mask = F.pad(prefix_mask, (prompts.size(1), 0), value=1)  # prompt位置设为1
         if not return_dict:
             raise NotImplementedError('return_dict False is not implemented yet for MPT')
         if output_attentions:
@@ -181,7 +200,7 @@ class MPTModel(MPTPreTrainedModel):
             raise ValueError('prefix_mask is a required argument when MPT is configured with prefix_lm=True.')
         if self.training:
             if self.attn_uses_sequence_id and sequence_id is None:
-                raise ValueError('sequence_id is a required argument when MPT is configured with attn_uses_sequence_id=True ' + 'and the model is in train mode.')
+                raise ValueError('sequence_id is a requ                                                                             ired argument when MPT is configured with attn_uses_sequence_id=True ' + 'and the model is in train mode.')
             elif self.attn_uses_sequence_id is False and sequence_id is not None:
                 warnings.warn('MPT received non-None input for `sequence_id` but is configured with attn_uses_sequence_id=False. ' + 'This input will be ignored. If you want the model to use `sequence_id`, set attn_uses_sequence_id to True.')
         S = seq_length
@@ -242,7 +261,7 @@ class MPTModel(MPTPreTrainedModel):
             else:
                 # 添加attn_weight
                 (x, past_key_value, attn_weight) = block(x, past_key_value=past_key_value, attn_bias=attn_bias, attention_mask=attention_mask, is_causal=self.is_causal,
-                                                         needs_weights=True)
+                                                         needs_weights=needs_weights)
             if past_key_values is not None:
                 past_key_values[b_idx] = past_key_value
         x = self.norm_f(x)
@@ -294,10 +313,13 @@ class MPTForCausalLM(MPTPreTrainedModel):
     def get_decoder(self):
         return self.transformer
     # lables.shape: [B, seqlen]
-    def forward(self, input_ids: torch.LongTensor, past_key_values: Optional[List[Tuple[torch.FloatTensor]]]=None, attention_mask: Optional[torch.ByteTensor]=None, prefix_mask: Optional[torch.ByteTensor]=None, sequence_id: Optional[torch.LongTensor]=None, labels: Optional[torch.LongTensor]=None, return_dict: Optional[bool]=None, output_attentions: Optional[bool]=None, output_hidden_states: Optional[bool]=None, use_cache: Optional[bool]=None, inputs_embeds: Optional[torch.FloatTensor] = None, use_attn: Optional[bool] = False):
+    def forward(self, input_ids: torch.LongTensor, past_key_values: Optional[List[Tuple[torch.FloatTensor]]]=None, attention_mask: Optional[torch.ByteTensor]=None, prefix_mask: Optional[torch.ByteTensor]=None, sequence_id: Optional[torch.LongTensor]=None, labels: Optional[torch.LongTensor]=None, return_dict: Optional[bool]=None, output_attentions: Optional[bool]=None, output_hidden_states: Optional[bool]=None, use_cache: Optional[bool]=None, inputs_embeds: Optional[torch.FloatTensor] = None, 
+                use_attn: Optional[bool] = False, prompt_embeddings: Optional[nn.Parameter] = None):
         return_dict = return_dict if return_dict is not None else self.config.return_dict
         use_cache = use_cache if use_cache is not None else self.config.use_cache
-        outputs = self.transformer(input_ids=input_ids, past_key_values=past_key_values, attention_mask=attention_mask, prefix_mask=prefix_mask, sequence_id=sequence_id, return_dict=return_dict, output_attentions=output_attentions, output_hidden_states=output_hidden_states, use_cache=use_cache, inputs_embeds=inputs_embeds)
+        # input_ids.shape torch.Size([2, 182])
+        outputs = self.transformer(input_ids=input_ids, past_key_values=past_key_values, attention_mask=attention_mask, prefix_mask=prefix_mask, sequence_id=sequence_id, return_dict=return_dict, output_attentions=output_attentions, output_hidden_states=output_hidden_states, use_cache=use_cache, inputs_embeds=inputs_embeds,
+                                   needs_weights=use_attn, prompt_embeddings=prompt_embeddings)
         logits = F.linear(outputs.last_hidden_state, self.transformer.wte.weight)   # logits: [B, seqlen, V]
         if self.logit_scale is not None:
             if self.logit_scale == 0:
@@ -310,6 +332,9 @@ class MPTForCausalLM(MPTPreTrainedModel):
             labels = torch.roll(labels, shifts=-1)
             labels[:, -1] = -100
             # F.cross_entropy: ignore_index: int = -100,
+            if prompt_embeddings is not None:
+                logits = logits[:, prompt_embeddings.shape[0]:, :]
+                logits = logits.contiguous() if not logits.is_contiguous() else logits
             ce_loss = F.cross_entropy(logits.view(-1, logits.size(-1)), labels.to(logits.device).view(-1))
         if use_attn:
             key_mask = self.get_key_mask(outputs.attentions, labels, key_mask_ratio=0.1)
