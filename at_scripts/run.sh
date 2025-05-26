@@ -12,6 +12,8 @@
 # todo
 # bash at_scripts/sat_both_key_entropy_atten.sh
 # bash at_scripts/sat_key_entropy_atten.sh
+bash at_scripts/freeat.sh
+bash at_scripts/fastat.sh
 bash at_scripts/visualat_both.sh
 # bash at_scripts/adat_both.sh
 bash at_scripts/adapterResNoshare_both_key_entropy_atten.sh

@@ -13,5 +13,7 @@
     "adat_both": 16,
     "adapterResNoshare_both_key_entropy_atten": 18,
     "advpt": 19,
+    "freeat": 0,
+    "fastat": 0,
     "tmp": 5
 }
