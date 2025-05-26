@@ -14,7 +14,6 @@ mkdir -p $output
 # 定义可变参数范围
 eps=0.1
 steps=10
-method=adapterRes_tuning
 exp_name="${output}/${script_name}"
 json_file="test.json"
 # 使用jq解析JSON文件

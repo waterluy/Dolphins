@@ -70,6 +70,14 @@ class Flamingo(nn.Module):
 
         self.vision_encoder = vision_encoder.visual
         self.perceiver = PerceiverResampler(dim=self.vis_dim, max_num_frames=max_num_frames)
+        self.lang_encoder = lang_encoder
+        self.lang_encoder.init_flamingo(
+            media_token_id=media_token_id,
+            lang_hidden_size=self.lang_dim,
+            vis_hidden_size=self.vis_dim,
+            cross_attn_every_n_layers=cross_attn_every_n_layers,
+            gradient_checkpointing=gradient_checkpointing,
+        )
         # 加入adapter
         self.forward_type = forward_type
         if forward_type in [
@@ -105,7 +113,7 @@ class Flamingo(nn.Module):
             # adapter 参数不共享
             print("forward_type:", forward_type)
             self.at_adapter = nn.ModuleList(
-                [AdapterWithResidual(config=AdapterConfig(d_model=self.vis_dim)) for _ in range(self.lang_encoder._get_decoder_layers())]
+                [AdapterWithResidual(config=AdapterConfig(d_model=self.vis_dim)) for _ in range(len(self.lang_encoder._get_decoder_layers()))]
             )
         if forward_type in [
             ForwardType.AdvPT,
@@ -119,14 +127,6 @@ class Flamingo(nn.Module):
                 requires_grad=True
             )
         
-        self.lang_encoder = lang_encoder
-        self.lang_encoder.init_flamingo(
-            media_token_id=media_token_id,
-            lang_hidden_size=self.lang_dim,
-            vis_hidden_size=self.vis_dim,
-            cross_attn_every_n_layers=cross_attn_every_n_layers,
-            gradient_checkpointing=gradient_checkpointing,
-        )
         self._use_gradient_checkpointing = gradient_checkpointing
         self.perceiver._use_gradient_checkpointing = gradient_checkpointing
         self.device = self.lang_encoder.device

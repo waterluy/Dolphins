@@ -27,7 +27,7 @@ accelerate launch --multi_gpu \
  --use_lora \
  --output_dir $OUTPUT_DIR \
  --per_device_train_batch_size 2 \
- --num_train_epochs 3 \
+ --num_train_epochs 1 \
  --at_iter 10 \
  --at_eps_imgs 0.1 \
  --forward_type $FORWARD_TYPE

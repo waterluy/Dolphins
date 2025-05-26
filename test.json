@@ -4,15 +4,24 @@
     "adapter_tuning": 5,
     "adapterRes_both_key_entropy_atten": [
         15,
-        "ckpts/20250522/sat/llava_bddx/step_720/checkpoint720.pt"
+        "ckpts/20250522/adapterRes_both_key_entropy_atten/new_checkpoint/checkpoint0.pt"
     ],
-    "adapterRes_key_entropy_atten": 14,
+    "adapterRes_key_entropy_atten": [
+	  14,
+	  "ckpts/20250522/adapterRes_key_entropy_atten/new_checkpoint/checkpoint0.pt"
+	],
     "adapterRes_tuning": [
         7,
         "ckpts/20250521/adapterRes_tuning/new_checkpoint/checkpoint0.pt"
     ],
-    "sat": 0,
-    "adapterRes4visual": 117,
+    "sat": [
+	    0,
+	    "ckpts/20250522/sat/new_checkpoint/checkpoint0.pt"
+	],
+    "adapterRes4visual": [
+	    117,
+	    "ckpts/20250523/adapterRes4visual/new_checkpoint/checkpoint0.pt"
+    ],
     "sat_key_entropy_atten": 12,
     "ori": [
         0, 

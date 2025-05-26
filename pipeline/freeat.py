@@ -58,7 +58,6 @@ import torch
 from mllm.src.flamingo import ForwardType
 from setting import ATConfig
 import enum
-from accelerate.utils import DistributedDataParallelKwargs
 
 
 
@@ -341,9 +340,6 @@ def main():
     accelerator = Accelerator(
         gradient_accumulation_steps=args.gradient_accumulation_steps,
         # mixed_precision="fp16",
-        kwargs_handlers=[
-            DistributedDataParallelKwargs(find_unused_parameters=True)
-        ],
         **accelerator_log_kwargs)
 
     if accelerator.is_main_process:
@@ -476,10 +472,9 @@ def main():
             },
         ]
         
-    # 设置model参数
-    model.set_grad_visualat()
 
     optimizer = torch.optim.AdamW(get_grouped_params(model), lr=args.learning_rate,eps=1e-3)
+
 
 
     # Scheduler and math around the number of training steps.

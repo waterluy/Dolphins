@@ -1,5 +1,5 @@
 #!/bin/bash
-export CUDA_VISIBLE_DEVICES=3
+export CUDA_VISIBLE_DEVICES=7
 
 # 获取脚本文件的路径
 script_dir=$(dirname "$0")

@@ -1,5 +1,6 @@
 #!/usr/bin/bash
-export CUDA_VISIBLE_DEVICES=7
+export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6
+export TORCH_DISTRIBUTED_DEBUG=DETAIL
 
 GPU_NUM=7
 JSON_FILE="forward.json"
@@ -21,9 +22,8 @@ if [ -z "$FORWARD_TYPE" ] || [ "$FORWARD_TYPE" == "null" ]; then
   exit 1
 fi
 
-# accelerate launch --multi_gpu \
-#  --num_processes $GPU_NUM \
-python \
+accelerate launch --multi_gpu \
+ --num_processes $GPU_NUM \
 pipeline/visualat_train.py \
  --use_lora \
  --output_dir $OUTPUT_DIR \

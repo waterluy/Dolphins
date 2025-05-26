@@ -1,5 +1,5 @@
 #!/bin/bash
-export CUDA_VISIBLE_DEVICES=4
+export CUDA_VISIBLE_DEVICES=7
 
 # 获取脚本文件的路径
 script_dir=$(dirname "$0")
@@ -14,13 +14,13 @@ mkdir -p $output
 lamb1=0.75
 lamb2=0.75
 lamb3=0.05
-eps=0.13
-exp_name="${output}/${script_name}"
+eps=0.06
 json_file="test.json"
 # 使用jq解析JSON文件
 key_name=${script_name#*-}
 FORWARD_TYPE=$(jq -r ".${key_name}[0]" "$json_file")
 # ckpt=$(jq -r ".${key_name}[1]" "$json_file")
+exp_name="${output}/${script_name}"
 
 python attack/final.py \
  --output $exp_name  \
@@ -28,8 +28,8 @@ python attack/final.py \
  --sup-clean \
  --sup-adj \
  --eps $eps \
- --iter 20 \
- --query 4 \
+ --iter 40 \
+ --query 2 \
  --loss cos \
  --lamb1 $lamb1 \
  --lamb2 $lamb2 \

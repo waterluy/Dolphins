@@ -14,15 +14,13 @@ mkdir -p $output
 lamb1=0.75
 lamb2=0.75
 lamb3=0.05
-eps=0.13
-method=adapter_tuning
-epoch=0
+eps=0.06
 json_file="test.json"
 # 使用jq解析JSON文件
 key_name=${script_name#*-}
 FORWARD_TYPE=$(jq -r ".${key_name}[0]" "$json_file")
 ckpt=$(jq -r ".${key_name}[1]" "$json_file")
-exp_name="${output}/${method}${epoch}-${script_name}"
+exp_name="${output}/${script_name}"
 
 python attack/final.py \
  --output $exp_name \
@@ -31,13 +29,13 @@ python attack/final.py \
  --sup-adj \
  --eps $eps \
  --iter 40 \
- --query 1 \
+ --query 2 \
  --loss cos \
  --lamb1 $lamb1 \
  --lamb2 $lamb2 \
  --lamb3 $lamb3 \
  --ckpt $ckpt \
- --forward_type $FORWARD_TYPE 
+ --forward_type $FORWARD_TYPE
 
 python tools/dolphin_evaluate.py \
  --exp ${exp_name}/dolphin_output.json \
