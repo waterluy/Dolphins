@@ -101,6 +101,8 @@ class Evaluation():
                 self.chatgpt_eval = GPTEvaluation(gpt)
             elif args.api == 'aihub':
                 self.chatgpt_eval = GPTEvaluationAihub(gpt=gpt)
+            else:
+                raise  Exception("Invalid API: {}".format(args.api))
 
     def eval_acc(self, unique_id, answer, GT):
         if "or" in GT: 
@@ -161,7 +163,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--exp', type=str, default=None)
     parser.add_argument('--gpt', type=str, default='gpt-4o-all')
-    parser.add_argument('--api', type=str, default='aihub', choices=['bianxie', 'aihub'])
+    parser.add_argument('--api', type=str, default='aihub', choices=['bianxie', 'aihub', 'aihub1'])
     args = parser.parse_args()
     benchmark_file = "./playground/dolphins_bench/dolphins_benchmark.json"
     chatgpt_score_file = "playground/dolphins_bench/results/dolphins/dolphins_scores.json"

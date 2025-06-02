@@ -277,6 +277,76 @@ class Flamingo(nn.Module):
 
         return output
 
+    def forward_trades(
+        self,
+        vision_x: torch.Tensor,
+        lang_x: torch.Tensor,
+        attention_mask: torch.Tensor = None,
+        labels: torch.Tensor = None,
+        media_locations : torch.Tensor = None,
+        clear_conditioned_layers: bool = True,
+        past_key_values=None,
+        use_cache: bool = False,
+        trades_ret=None,
+        clean_logits=None,
+    ):
+        """
+        Forward pass of Flamingo.
+
+        Args:
+            vision_x (torch.Tensor): Vision input
+                shape (B, T_img, F, C, H, W) with F=1
+            lang_x (torch.Tensor): Language input ids
+                shape (B, T_txt)
+            attention_mask (torch.Tensor, optional): Attention mask. Defaults to None.
+            labels (torch.Tensor, optional): Labels. Defaults to None.
+            clear_conditioned_layers: if True, clear the conditioned layers
+                once the foward pass is completed. Set this to false if the
+                same set of images will be reused in another subsequent
+                forward pass.
+            past_key_values: pre-computed values to pass to language model.
+                See past_key_values documentation in Hugging Face
+                CausalLM models.
+            use_cache: whether to use cached key values. See use_cache
+                documentation in Hugging Face CausalLM models.
+        """
+        assert (
+            self.lang_encoder.initialized_flamingo
+        ), "Flamingo layers are not initialized. Please call `init_flamingo` first."
+
+        assert (
+            self.lang_encoder._use_cached_vision_x or vision_x is not None
+        ), "Must provide either vision_x or have precached media using cache_media()."
+
+        if self.lang_encoder._use_cached_vision_x:
+            # Case: use cached; vision_x should be cached and other
+            # vision-related inputs should not be provided.
+            assert (
+                vision_x is None
+            ), "Expect vision_x to be None when media has been cached using cache_media(). Try uncache_media() first."
+            assert self.lang_encoder.is_conditioned()
+
+        else:
+            # Case: do not use caching (i.e. this is a standard forward pass);
+            self._encode_vision_x_original(vision_x=vision_x)
+            self._condition_media_locations(input_ids=lang_x)
+        
+        output = self.lang_encoder(
+            input_ids=lang_x,
+            attention_mask=attention_mask,
+            labels=labels,
+            media_locations=media_locations,
+            past_key_values=past_key_values,
+            use_cache=use_cache,
+            trades_ret=trades_ret,
+            clean_logits=clean_logits,
+        )
+
+        if clear_conditioned_layers:
+            self.lang_encoder.clear_conditioned_layers()
+
+        return output
+
     def generate(
         self,
         vision_x: torch.Tensor,
@@ -331,6 +401,7 @@ class Flamingo(nn.Module):
             ForwardType.Default,
             ForwardType.DefaultKeyEntropyAtten,  # ?????????
             ForwardType.DefaultBothKeyEntropyAtten,
+            ForwardType.AdvPT,
             ]:
             self._encode_vision_x_original(vision_x=vision_x)
         elif forward_type in [

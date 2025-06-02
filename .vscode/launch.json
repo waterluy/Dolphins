@@ -9,8 +9,9 @@
             "name": "Python Debugger: Current File with Arguments",
             "type": "debugpy",
             "request": "launch",
-            "program": "pipeline/at_train.py",
+            // "program": "pipeline/at_train.py",
             // "program": "pipeline/advpt.py",
+            "program": "exr/dolphins_bench_attack_pgd_white.py",
             "console": "integratedTerminal",
             "cwd": "${workspaceFolder}",
             "justMyCode": false,
@@ -18,13 +19,18 @@
             "env": {
                 "CUDA_VISIBLE_DEVICES": "7",
             },
+            // "args": [
+            //     "--use_lora",
+            //     "--output_dir", "./tmp",
+            //     "--per_device_train_batch_size", "2",
+            //     "--at_iter", "10",
+            //     "--at_eps_imgs", "0.1",
+            //     "--forward_type", "15",
+            // ]
             "args": [
-                "--use_lora",
-                "--output_dir", "./tmp",
-                "--per_device_train_batch_size", "2",
-                "--at_iter", "10",
-                "--at_eps_imgs", "0.1",
-                "--forward_type", "15",
+                "--output", "./tmp",
+                "--ckpt", "ckpts/20250525/advpt/new_checkpoint/checkpoint0.pt",
+                "--forward_type", "19"
             ]
         }
     ]

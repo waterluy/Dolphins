@@ -34,7 +34,7 @@ class GPTEvaluationAihub:
         return messages
     
     def GPT_eval(self, answer, GT):
-        prompts = "Rate my answer based on the correct answer out of 100, with higher scores indicating that the answer is closer to the correct answer, and you should be accurate to single digits like 77, 93, 56,etc. Output the number only. "
+        prompts = "Rate my answer based on the correct answer out of 100, with higher scores indicating that the answer is closer to the correct answer, and you should be accurate to single digits like 62, 78, 41,etc. Output the number only. "
         prompts = prompts + "This is the correct answer: " + GT + "This is my answer: " + answer
         
         output = ""

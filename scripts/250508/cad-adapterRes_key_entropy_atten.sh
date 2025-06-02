@@ -22,24 +22,23 @@ FORWARD_TYPE=$(jq -r ".${key_name}[0]" "$json_file")
 ckpt=$(jq -r ".${key_name}[1]" "$json_file")
 exp_name="${output}/${script_name}"
 
-python attack/final.py \
- --output $exp_name \
- --sup-text \
- --sup-clean \
- --sup-adj \
- --eps $eps \
- --iter 40 \
- --query 2 \
- --loss cos \
- --lamb1 $lamb1 \
- --lamb2 $lamb2 \
- --lamb3 $lamb3 \
- --ckpt $ckpt \
- --forward_type $FORWARD_TYPE
+# python attack/final.py \
+#  --output $exp_name \
+#  --sup-text \
+#  --sup-clean \
+#  --sup-adj \
+#  --eps $eps \
+#  --iter 40 \
+#  --query 2 \
+#  --loss cos \
+#  --lamb1 $lamb1 \
+#  --lamb2 $lamb2 \
+#  --lamb3 $lamb3 \
+#  --ckpt $ckpt \
+#  --forward_type $FORWARD_TYPE
 
 python tools/dolphin_evaluate.py \
  --exp ${exp_name}/dolphin_output.json \
- --api 'aihub' \
- --gpt 'gpt-4o'
-
+ --api 'aihub1' \
+ --gpt 'gpt-3.5-turbo'
 

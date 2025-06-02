@@ -17,13 +17,14 @@ FORWARD_TYPE=$(jq -r ".${key_name}[0]" "$json_file")
 ckpt=$(jq -r ".${key_name}[1]" "$json_file")
 
 # 定义要遍历的methods列表
-methods=("advclip" "anyattack" "sga" "vlpattack" "attackvlm") 
+# methods=("advclip" "anyattack" "sga" "vlpattack" "attackvlm") 
+methods=("anyattack")
 
 # 遍历每个method
 for method in "${methods[@]}"; do
     echo "Processing method: $method"
 
-    exp_name="${output}/{$method}-${key_name}"
+    exp_name="${output}/${method}-${key_name}"
     mkdir -p $exp_name
 
     python vs_attack/dolphins_bench_attack_general.py \

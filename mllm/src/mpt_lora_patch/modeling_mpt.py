@@ -314,7 +314,8 @@ class MPTForCausalLM(MPTPreTrainedModel):
         return self.transformer
     # lables.shape: [B, seqlen]
     def forward(self, input_ids: torch.LongTensor, past_key_values: Optional[List[Tuple[torch.FloatTensor]]]=None, attention_mask: Optional[torch.ByteTensor]=None, prefix_mask: Optional[torch.ByteTensor]=None, sequence_id: Optional[torch.LongTensor]=None, labels: Optional[torch.LongTensor]=None, return_dict: Optional[bool]=None, output_attentions: Optional[bool]=None, output_hidden_states: Optional[bool]=None, use_cache: Optional[bool]=None, inputs_embeds: Optional[torch.FloatTensor] = None, 
-                use_attn: Optional[bool] = False, prompt_embeddings: Optional[nn.Parameter] = None):
+                use_attn: Optional[bool] = False, prompt_embeddings: Optional[nn.Parameter] = None,
+                trades_ret=None, clean_logits=None):
         return_dict = return_dict if return_dict is not None else self.config.return_dict
         use_cache = use_cache if use_cache is not None else self.config.use_cache
         # input_ids.shape torch.Size([2, 182])
@@ -325,6 +326,8 @@ class MPTForCausalLM(MPTPreTrainedModel):
             if self.logit_scale == 0:
                 warnings.warn(f'Multiplying logits by self.logit_scale={self.logit_scale!r}. This will produce uniform (uninformative) outputs.')
             logits *= self.logit_scale
+        if trades_ret == "logits":
+            return CausalLMOutputWithPast(loss=0, key_loss=0, ce_loss=0, logits=logits, past_key_values=outputs.past_key_values, hidden_states=outputs.hidden_states)
         loss = None
         key_loss = 0
         ce_loss = 0
@@ -341,6 +344,15 @@ class MPTForCausalLM(MPTPreTrainedModel):
             prob = torch.softmax(logits, dim=-1)  # [B, seqlen, V]
             key_loss = self.entropy_key_loss(prob, key_mask, weight=1.0)
             loss = ce_loss + key_loss
+        elif trades_ret == "trades":
+            assert clean_logits is not None, "clean_logits (natural sample logits) must be provided for TRADES loss"
+            # 返回trades对抗训练的loss, 在下面实现
+            kl_loss = F.kl_div(
+                F.log_softmax(logits, dim=-1),   # adversarial logits (log-probabilities)
+                F.softmax(clean_logits.detach(), dim=-1),  # clean logits (probabilities, detached to avoid gradient to clean model)
+                reduction='batchmean'
+            )
+            loss = kl_loss
         else:
             loss = ce_loss
         return CausalLMOutputWithPast(loss=loss, key_loss=key_loss, ce_loss=ce_loss, logits=logits, past_key_values=outputs.past_key_values, hidden_states=outputs.hidden_states)

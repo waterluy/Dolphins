@@ -30,6 +30,7 @@ accelerate launch --mixed_precision "no" --multi_gpu \
  --num_train_epochs 1 \
  --at_iter 10 \
  --at_eps_imgs 0.1 \
+ --use_prompt_tuning \
  --forward_type $FORWARD_TYPE
 
  

@@ -4,7 +4,7 @@
     "adapter_tuning": 5,
     "adapterRes_both_key_entropy_atten": [
         15,
-        "ckpts/20250522/adapterRes_both_key_entropy_atten/new_checkpoint/checkpoint0.pt"
+        "ckpts/20250522/adapterRes_both_key_entropy_atten/llava_bddx/step_540/checkpoint540.pt"
     ],
     "adapterRes_key_entropy_atten": [
 	  14,
@@ -22,22 +22,45 @@
 	    117,
 	    "ckpts/20250523/adapterRes4visual/new_checkpoint/checkpoint0.pt"
     ],
-    "sat_key_entropy_atten": 12,
+    "sat_key_entropy_atten": [
+        12,
+        "ckpts/20250524/sat_key_entropy_atten/new_checkpoint/checkpoint0.pt"
+    ],
     "ori": [
         0, 
         "gray311/Dolphins"
     ],
     "visualat_both": [
-        16
+        16,
+        "ckpts/20250527/visualat_both/new_checkpoint/checkpoint0.pt"
     ],
     "adat_both": [
-        16
+        16,
+        "ckpts/20250524/adat_both/new_checkpoint/checkpoint0.pt"
     ],
     "adapterResNoshare_both_key_entropy_atten": [
-        18
+        18,
+        "ckpts/20250527/adapterResNoshare_both_key_entropy_atten/new_checkpoint/checkpoint0.pt"
     ],
     "advpt": [
-        19
+        19,
+        "ckpts/20250525/advpt/new_checkpoint/checkpoint0.pt"
+    ],
+    "freeat": [
+        "0",
+        "ckpts/20250526/freeat/new_checkpoint/checkpoint0.pt"
+    ],
+    "fastat": [
+        "0",
+        "ckpts/20250527/fastat/new_checkpoint/checkpoint0.pt"
+    ],
+    "trades": [
+        "0",
+        "ckpts/20250528/trades/checkpoint720.pt"
+    ],
+    "sat_both_key_entropy_atten": [
+        16,
+        "ckpts/20250524/sat_both_key_entropy_atten/new_checkpoint/checkpoint0.pt"
     ],
     "tmp": [
         0, 

@@ -21,17 +21,17 @@ key_name=${script_name#*-}
 FORWARD_TYPE=$(jq -r ".${key_name}[0]" "$json_file")
 ckpt=$(jq -r ".${key_name}[1]" "$json_file")
 
-python exr/dolphins_bench_attack_pgd_white.py \
- --output $exp_name \
- --eps "$eps" \
- --steps "$steps" \
- --ckpt "$ckpt" \
- --forward_type $FORWARD_TYPE
+# python exr/dolphins_bench_attack_pgd_white.py \
+#  --output $exp_name \
+#  --eps "$eps" \
+#  --steps "$steps" \
+#  --ckpt "$ckpt" \
+#  --forward_type $FORWARD_TYPE
 
 python tools/dolphin_evaluate.py \
  --exp ${exp_name}/dolphin_output.json \
  --api 'aihub' \
- --gpt 'gpt-4o'
+ --gpt 'gpt-3.5-turbo'
 
 
 

@@ -137,7 +137,7 @@ if __name__ == "__main__":
     parser.add_argument('--forward_type', type=int, default=0)
     args = parser.parse_args()
     CKPT = args.ckpt
-    FORWARDTYPE = args.forward_type
+    FORWARDTYPE = ForwardType(args.forward_type)
     model, image_processor, tokenizer = load_pretrained_modoel()
     generation_kwargs = {'max_new_tokens': 512, 'temperature': 1,
                                 'top_k': 0, 'top_p': 1, 'no_repeat_ngram_size': 3, 'length_penalty': 1,
@@ -179,7 +179,7 @@ if __name__ == "__main__":
                 lang_x=inputs["input_ids"].cuda(),
                 attention_mask=inputs["attention_mask"].cuda(),
                 num_beams=3,
-                forward_type=ForwardType(5),
+                forward_type=FORWARDTYPE,
                 **generation_kwargs,
             )
 

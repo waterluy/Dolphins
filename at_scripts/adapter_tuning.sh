@@ -1,7 +1,7 @@
 #!/usr/bin/bash
-export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6
+export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5
 
-GPU_NUM=7
+GPU_NUM=6
 JSON_FILE="forward.json"
 
 # 获取当前日期，格式为YYYYMMDD

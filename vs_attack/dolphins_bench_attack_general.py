@@ -168,10 +168,10 @@ def get_noise(noise_path):
     return transform(image)
 
 method2noise = {
-    'advclip': '/home/ubuntu/wlu/black/advclip/uap_gan_94.38_1.png',
-    'anyattack': '/home/ubuntu/wlu/black/anyattack/noise_0.06.png',
-    'sga': '/home/ubuntu/wlu/black/sga/noise.png',
-    'vlpattack': '/home/ubuntu/wlu/black/vlpattack/noise.png',
+    'advclip': '/home/beihang/wlu/vlmattack/AdvClip/uap_gan_94.38_1.png',
+    'anyattack': '/home/beihang/wlu/vlmattack/AnyAttack/noise_0.06.png',
+    'sga': '/home/beihang/wlu/vlmattack/SGA/noise.png',
+    'vlpattack': '/home/beihang/wlu/vlmattack/VLPTransferAttack/noise.png',
     'advlm': '/home/beihang/wlu/adllm/Dolphins/black/dolphin_advlm_linf_eps0.1_steps50_pos.png',
     'attackvlm': '/home/ubuntu/wlu/black/attackvlm/noise_drivelm.jpg',
 }
