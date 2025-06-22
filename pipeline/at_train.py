@@ -58,7 +58,7 @@ import torch
 from mllm.src.flamingo import ForwardType
 from setting import ATConfig
 import enum
-
+os.environ["WANDB_MODE"] = "disabled"
 
 
 def print_memory(msg):
@@ -326,6 +326,7 @@ def main():
     parser.add_argument('--at_iter', type=int, default=10, help='Number of attack iterations')
     parser.add_argument('--at_eps_imgs', type=float, default=0.1, help='Maximum perturbation magnitude')
     parser.add_argument('--at_alpha_imgs', type=float, default=0.02, help='Step size for attack updates')
+    parser.add_argument('--lamb', type=float, default=0.1, help='key_loss weight')
 
 
     parser = add_data_args(parser)
@@ -339,7 +340,7 @@ def main():
     accelerator_log_kwargs["project_dir"] = args.output_dir
     accelerator = Accelerator(
         gradient_accumulation_steps=args.gradient_accumulation_steps,
-        # mixed_precision="fp16",
+        mixed_precision="no",
         **accelerator_log_kwargs)
 
     if accelerator.is_main_process:
@@ -396,6 +397,7 @@ def main():
             use_peft=True if peft_config is not None else False,
             peft_config=peft_config,
             forward_type=ForwardType(args.forward_type),
+            lamb = args.lamb,
         )
         # model = load_checkpoint(model, args.model_name_or_path, args.load_hf_model)
         checkpoint_path = hf_hub_download("gray311/Dolphins", "checkpoint.pt")
@@ -643,15 +645,15 @@ def main():
                         perturbed_imgs = torch.clamp(denorm_imgs + noise, 0, 1)  # 保持像素值在合法范围
                         perturbed_imgs = normalize(perturbed_imgs, mean, std)
                         # 使用 torch.cuda.amp.autocast 确保混合精度生效
-                        with torch.cuda.amp.autocast(dtype=torch.float16):
-                            loss = model(
-                                vision_x=perturbed_imgs.half(),
-                                lang_x=input_ids,
-                                attention_mask=attention_mask,
-                                labels=labels,
-                                media_locations=media_locations,
-                                forward_type=ForwardType(args.forward_type),
-                            )[0]   
+                        # with torch.cuda.amp.autocast(dtype=torch.float16):
+                        loss = model(
+                            vision_x=perturbed_imgs.half(),
+                            lang_x=input_ids,
+                            attention_mask=attention_mask,
+                            labels=labels,
+                            media_locations=media_locations,
+                            forward_type=ForwardType(args.forward_type),
+                        )[0]   
                         grad = torch.autograd.grad(loss, noise, create_graph=False, retain_graph=False)[0]
                         with torch.no_grad():
                             noise = noise.detach() + at_config.at_alpha_imgs * grad.sign()
@@ -684,43 +686,43 @@ def main():
                     ForwardType.AdapterForVisual,
                     ForwardType.AdapterWithResidualForVisual,
                 ]:
-                    with torch.cuda.amp.autocast(dtype=torch.float16):
-                        output = model(
-                            vision_x=images.half(),
-                            lang_x=input_ids,
-                            attention_mask=attention_mask,
-                            labels=labels,
-                            media_locations=media_locations,
-                            forward_type=ForwardType(args.forward_type),
-                        )
-                        loss = output['loss']
+                    # with torch.cuda.amp.autocast(dtype=torch.float16):
+                    output = model(
+                        vision_x=images.half(),
+                        lang_x=input_ids,
+                        attention_mask=attention_mask,
+                        labels=labels,
+                        media_locations=media_locations,
+                        forward_type=ForwardType(args.forward_type),
+                    )
+                    loss = output['loss']
                 elif ForwardType(args.forward_type) in [
                     ForwardType.AdapterKeyEntropyAtten,
                     ForwardType.AdapterResKeyEntropyAtten,
                 ]:
-                    with torch.cuda.amp.autocast(dtype=torch.float16):
-                        output = model(
-                            vision_x=images.half(),
-                            lang_x=input_ids,
-                            attention_mask=attention_mask,
-                            labels=labels,
-                            media_locations=media_locations,
-                            forward_type=ForwardType.Adapterwl0318,
-                        )
-                        loss = output['loss']
+                    # with torch.cuda.amp.autocast(dtype=torch.float16):
+                    output = model(
+                        vision_x=images.half(),
+                        lang_x=input_ids,
+                        attention_mask=attention_mask,
+                        labels=labels,
+                        media_locations=media_locations,
+                        forward_type=ForwardType.Adapterwl0318,
+                    )
+                    loss = output['loss']
                 elif ForwardType(args.forward_type) in [
                     ForwardType.DefaultKeyEntropyAtten,  # default 都没有adapter, 
                 ]:
-                    with torch.cuda.amp.autocast(dtype=torch.float16):
-                        output = model(
-                            vision_x=images.half(),
-                            lang_x=input_ids,
-                            attention_mask=attention_mask,
-                            labels=labels,
-                            media_locations=media_locations,
-                            forward_type=ForwardType.Default,
-                        )
-                        loss = output['loss']
+                    # with torch.cuda.amp.autocast(dtype=torch.float16):
+                    output = model(
+                        vision_x=images.half(),
+                        lang_x=input_ids,
+                        attention_mask=attention_mask,
+                        labels=labels,
+                        media_locations=media_locations,
+                        forward_type=ForwardType.Default,
+                    )
+                    loss = output['loss']
                 else:
                     raise Exception(f"not support {ForwardType(args.forward_type)} forward type")
 

@@ -48,6 +48,7 @@ class Flamingo(nn.Module):
         cross_attn_every_n_layers: int = 1,
         gradient_checkpointing: bool = False,
         forward_type=ForwardType.Default,
+        lamb: float = 0.1,
     ):
         """
         Args:
@@ -60,6 +61,7 @@ class Flamingo(nn.Module):
             cross_attn_every_n_layers (int, optional): How often to apply cross attention after transformer layer. Defaults to 1.
         """
         super().__init__()
+        self.lamb = lamb
         self.eoc_token_id = eoc_token_id
         self.media_token_id = media_token_id
         self.vis_dim = vis_dim
@@ -143,6 +145,7 @@ class Flamingo(nn.Module):
         use_cache: bool = False,
         forward_type=ForwardType.Default,
         adv_imgs=None,
+        key_mode='normal',
     ):
         """
         Forward pass of Flamingo.
@@ -234,6 +237,8 @@ class Flamingo(nn.Module):
                 past_key_values=past_key_values,
                 use_cache=use_cache,
                 use_attn=True,
+                lamb=self.lamb,
+                key_mode=key_mode,
             )
         elif forward_type in [
             ForwardType.Default,
@@ -473,6 +478,27 @@ class Flamingo(nn.Module):
 
         for layer in self.lang_encoder._get_decoder_layers():
             layer.condition_vis_x(vision_x)
+        
+    def get_adapter_features(
+        self,
+        vision_x: torch.Tensor,
+    ):
+        assert vision_x.ndim == 6, "vision_x should be of shape (b, T_img, F, C, H, W)"
+        b, T, F = vision_x.shape[:3]
+        # assert F == 1, "Only single frame supported"
+
+        vision_x = rearrange(vision_x, "b T F c h w -> (b T F) c h w")
+
+        # with torch.no_grad():
+        vision_x = self.vision_encoder(vision_x)[1]
+        vision_x = rearrange(vision_x, "(b T F) v d -> b T F v d", b=b, T=T, F=F)
+        vision_x = self.perceiver(vision_x)
+            
+        # 参数共享
+        # print(vision_x.shape)   # torch.Size([2, 5, 64, 1024])
+        vision_x = self.at_adapter(vision_x)
+        
+        return vision_x
             
     def _encode_vision_x_with_adapterwl0318(self, vision_x: torch.Tensor, forward_type: ForwardType):
         """

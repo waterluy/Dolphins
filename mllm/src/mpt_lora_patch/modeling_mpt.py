@@ -315,7 +315,7 @@ class MPTForCausalLM(MPTPreTrainedModel):
     # lables.shape: [B, seqlen]
     def forward(self, input_ids: torch.LongTensor, past_key_values: Optional[List[Tuple[torch.FloatTensor]]]=None, attention_mask: Optional[torch.ByteTensor]=None, prefix_mask: Optional[torch.ByteTensor]=None, sequence_id: Optional[torch.LongTensor]=None, labels: Optional[torch.LongTensor]=None, return_dict: Optional[bool]=None, output_attentions: Optional[bool]=None, output_hidden_states: Optional[bool]=None, use_cache: Optional[bool]=None, inputs_embeds: Optional[torch.FloatTensor] = None, 
                 use_attn: Optional[bool] = False, prompt_embeddings: Optional[nn.Parameter] = None,
-                trades_ret=None, clean_logits=None):
+                trades_ret=None, clean_logits=None,lamb = 0.1,key_mode='normal'):
         return_dict = return_dict if return_dict is not None else self.config.return_dict
         use_cache = use_cache if use_cache is not None else self.config.use_cache
         # input_ids.shape torch.Size([2, 182])
@@ -340,9 +340,14 @@ class MPTForCausalLM(MPTPreTrainedModel):
                 logits = logits.contiguous() if not logits.is_contiguous() else logits
             ce_loss = F.cross_entropy(logits.view(-1, logits.size(-1)), labels.to(logits.device).view(-1))
         if use_attn:
-            key_mask = self.get_key_mask(outputs.attentions, labels, key_mask_ratio=0.1)
+            key_mask = self.get_key_mask(outputs.attentions, labels, key_mask_ratio=0.1,key_mode=key_mode)
+            # print(torch.isnan(key_mask).any())
+            # print(torch.isnan(logits).any())
             prob = torch.softmax(logits, dim=-1)  # [B, seqlen, V]
-            key_loss = self.entropy_key_loss(prob, key_mask, weight=1.0)
+            # print(torch.isnan(prob).any())
+            key_loss = self.entropy_key_loss(prob, key_mask, weight=lamb)
+            # print(key_loss)
+            # quit()
             loss = ce_loss + key_loss
         elif trades_ret == "trades":
             assert clean_logits is not None, "clean_logits (natural sample logits) must be provided for TRADES loss"
@@ -368,52 +373,93 @@ class MPTForCausalLM(MPTPreTrainedModel):
         B, T, V = probs.shape
         # print(probs.shape, key_mask.shape)  # torch.Size([4, 511, 32000]) torch.Size([4, 511])
         probs = probs.reshape(-1, V)               # [B*T, V]
+        # print(torch.isnan(probs).any())
         key_mask = key_mask.reshape(-1).bool()     # [B*T]
         # print(probs.shape, key_mask.shape)  # torch.Size([2044, 32000]) torch.Size([2044]) 
+        # print(torch.isnan(key_mask).any())
 
         if key_mask.sum() == 0:
             return probs.mean() * 0  # 避免没有关键词位置时计算出nan !!!!!!
 
         key_probs = probs[key_mask]                # [N, V]
+        # print(torch.isnan(key_probs).any())
         # print(key_probs.shape)  # torch.Size([126, 32000])
-        entropy = - (key_probs * key_probs.log()).sum(dim=-1)  # 每个位置的熵 [N]
+        
+        # print(key_probs)
+        # print(key_mask)
+        # quit()
+        # print(torch.isnan(key_probs.log()).any())
+        entropy = - (key_probs * (key_probs + 1e-6).log()).sum(dim=-1)  # 每个位置的熵 [N]
+        # print(torch.isnan(entropy).any())
         # print(entropy.shape)    # torch.Size([126])
         mean_entropy = entropy.mean()
+        # print(torch.isnan(mean_entropy))
         # print(mean_entropy)  # tensor(9.0183, device='cuda:0', grad_fn=<MeanBackward0>)
         # print(mean_entropy * weight)    # tensor(0.9018, device='cuda:0', grad_fn=<MulBackward0>)
 
         return mean_entropy * weight
 
-    def get_key_mask(self, atten, labels, key_mask_ratio=0.1):
+    def get_key_mask(self, atten, labels, key_mask_ratio=0.1,key_mode='normal'):
         # atten: [B, num_heads, seqlen_q, seqlen_k]
         # labels: [B, seqlen]
         bs, seqlen = labels.shape
         valid_mask = labels != -100
-        atten = atten.detach()
-        atten = atten.mean(dim=1)  # [B, T, T] 平均掉head
-        atten = atten.mean(dim=1)   # [B, T] 平均掉 query 维度，只留下每个 token 作为 key 被关注的程度
-        # 每个位置的值就表示：这个 token 作为 key 时在全局 query 视角下被关注的平均程度；
-        # top-k
-        key_mask = torch.zeros_like(valid_mask, dtype=torch.bool)   # 初始化为 False
-        for i in range(bs):
-            # nonzero 返回的格式是 [row, col]，这里只需要 row 即可, row表示第几个有效token, col表示有效token的索引
-            # nonzero 返回的tensor一定是2维的 [n, 1]
-            valid_indices = valid_mask[i].nonzero(as_tuple=False).squeeze(-1)   # 有效的 token 索引
-            # print(valid_indices)
-            # numel函数返回张量中元素的个数
-            if valid_indices.numel() == 0:
-                continue
-            k = max(1, int(valid_indices.numel() * key_mask_ratio))  # 计算 top-k 的 k 值
-            topk_scores = atten[i, valid_indices]  # dim= 只考虑有效的 token
-            # print(topk_scores)  # torch.Size([n])
-            topk_indices = topk_scores.topk(k, largest=True).indices  # 找到 top-k 的索引
-            # print(topk_indices)  # torch.Size([k])
-            selected_positions = valid_indices[topk_indices]    # 获取对应的位置
-            # print(selected_positions.shape)
-            # print(selected_positions)
-            key_mask[i, selected_positions] = True  # 标记为 key 位置
-            # quit()
-        return key_mask
+        if key_mode == 'all':
+            return valid_mask
+        elif key_mode == 'normal':
+            atten = atten.detach()
+            atten = atten.mean(dim=1)  # [B, T, T] 平均掉head
+            atten = atten.mean(dim=1)   # [B, T] 平均掉 query 维度，只留下每个 token 作为 key 被关注的程度
+            # 每个位置的值就表示：这个 token 作为 key 时在全局 query 视角下被关注的平均程度；
+            # top-k
+            key_mask = torch.zeros_like(valid_mask, dtype=torch.bool)   # 初始化为 False
+            for i in range(bs):
+                # nonzero 返回的格式是 [row, col]，这里只需要 row 即可, row表示第几个有效token, col表示有效token的索引
+                # nonzero 返回的tensor一定是2维的 [n, 1]
+                valid_indices = valid_mask[i].nonzero(as_tuple=False).squeeze(-1)   # 有效的 token 索引
+                # print(valid_indices)
+                # numel函数返回张量中元素的个数
+                if valid_indices.numel() == 0:
+                    continue
+                k = max(1, int(valid_indices.numel() * key_mask_ratio))  # 计算 top-k 的 k 值
+                topk_scores = atten[i, valid_indices]  # dim= 只考虑有效的 token
+                # print(topk_scores)  # torch.Size([n])
+                topk_indices = topk_scores.topk(k, largest=True).indices  # 找到 top-k 的索引
+                # print(topk_indices)  # torch.Size([k])
+                selected_positions = valid_indices[topk_indices]    # 获取对应的位置
+                # print(selected_positions.shape)
+                # print(selected_positions)
+                key_mask[i, selected_positions] = True  # 标记为 key 位置
+                # quit()
+            return key_mask
+        else:
+            atten = atten.detach()
+            atten = atten.mean(dim=1)  # [B, T, T] 平均掉head
+            atten = atten.mean(dim=1)   # [B, T] 平均掉 query 维度，只留下每个 token 作为 key 被关注的程度
+            # 每个位置的值就表示：这个 token 作为 key 时在全局 query 视角下被关注的平均程度；
+            # top-k
+            key_mask = torch.zeros_like(valid_mask, dtype=torch.bool)   # 初始化为 False
+            for i in range(bs):
+                # nonzero 返回的格式是 [row, col]，这里只需要 row 即可, row表示第几个有效token, col表示有效token的索引
+                # nonzero 返回的tensor一定是2维的 [n, 1]
+                valid_indices = valid_mask[i].nonzero(as_tuple=False).squeeze(-1)   # 有效的 token 索引
+                # print(valid_indices)
+                # numel函数返回张量中元素的个数
+                if valid_indices.numel() == 0:
+                    continue
+                k = max(1, int(valid_indices.numel() * key_mask_ratio))  # 计算 top-k 的 k 值
+                if k < valid_indices.numel():
+                    # 如果有效token数量大于k，随机选择k个
+                    perm = torch.randperm(valid_indices.numel())
+                    selected_indices = perm[:k]
+                    selected_positions = valid_indices[selected_indices]
+                else:
+                    # 如果有效token数量小于等于k，选择所有有效token
+                    selected_positions = valid_indices
+                key_mask[i, selected_positions] = True  # 标记为 key 位置
+                # quit()
+            return key_mask
+            
 
     def param_init_fn(self, module):
         init_fn_name = self.config.init_config['name']

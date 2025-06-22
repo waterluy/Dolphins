@@ -33,6 +33,7 @@ def create_model_and_transforms(
     cache_dir = None,
     max_num_frames = None,
     forward_type=ForwardType.Default,
+    lamb=0.1,
     **flamingo_kwargs,
 ):
     """
@@ -120,6 +121,7 @@ def create_model_and_transforms(
         max_num_frames=max_num_frames,
         cross_attn_every_n_layers=cross_attn_every_n_layers,
         forward_type=forward_type,
+        lamb=lamb,
         **flamingo_kwargs,
     )
 

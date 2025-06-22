@@ -160,7 +160,7 @@ class BDDXDataset(VQADataset):
 
     def load_car_infos(self):
         # info_path = os.path.join("/".join(self.ann_paths[0].split("/")[:-1]), "log")
-        info_path ='/data/wlu/Dolphins/datasets_part/BDDX/processed_video_info'
+        info_path ='/mnt/ssd2/wlu/adllm/Dolphins/datasets_part/BDDX/processed_video_info'
         self.car_infos = {}
         for file in tqdm(os.listdir(info_path), desc="[Get Car Info]"):
             file_path = os.path.join(info_path, file)

@@ -25,3 +25,4 @@ wandb
 ckpts
 results4CAD
 wlu_outputs
+merged_scores.csv

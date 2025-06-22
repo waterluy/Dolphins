@@ -112,7 +112,6 @@ def load_pretrained_modoel():
     else:
         checkpoint_path = CKPT
     print('load checkpoint from:', checkpoint_path)
-    checkpoint_path = hf_hub_download("gray311/Dolphins", "checkpoint.pt")
     model.load_state_dict(torch.load(checkpoint_path), strict=False)
     model.half().cuda()
 
@@ -175,27 +174,31 @@ def denormalize(tensor, mean, std):
     std = torch.tensor(std).view(1, 3, 1, 1).half().to(tensor.device)
     return tensor * std + mean
 
-def fgsm_attack(model, vision_x, input_ids, attention_mask, labels=None, epsilon=0.001, dire='pos'):
+
+def pgd_attack(model, vision_x, input_ids, attention_mask, labels=None, epsilon=0.001, steps=10, lp='linf', dire='pos'):
     noise = torch.zeros_like(vision_x).to(device).half().cuda()
-    noise.requires_grad = True
-    vision_x_noise = denormalize(vision_x, image_mean, image_std)
-    vision_x_noise = vision_x_noise.half().cuda() + noise
-    vision_x_noise = normalize(vision_x_noise, image_mean, image_std)
-    loss = model(
-        vision_x=vision_x_noise,
-        lang_x=input_ids.cuda(),
-        attention_mask=attention_mask.cuda(),
-        labels=labels.cuda(),
-        media_locations=None,
-        forward_type=ForwardType(FORWARDTYPE),
-    )[0]
-    noise.grad = None
-    loss.backward()
-    grad = noise.grad.detach()
-    if dire == 'neg':
-        noise = noise - epsilon * grad.sign()
-    else:
-        noise = noise + epsilon * grad.sign()
+    alpha = 2 * epsilon / steps
+    denormed_vision_x = denormalize(vision_x, image_mean, image_std)
+    for _ in range(steps):
+        noise.requires_grad = True
+        vision_x_noise = denormed_vision_x.half().cuda() + noise
+        vision_x_noise = normalize(vision_x_noise, image_mean, image_std)
+        loss = model(
+            vision_x=vision_x_noise,
+            lang_x=input_ids.cuda(),
+            attention_mask=attention_mask.cuda(),
+            labels=labels.cuda(),
+            media_locations=None,
+            forward_type=ForwardType(FORWARDTYPE),
+        )[0]
+        noise.grad = None
+        loss.backward()
+        grad = noise.grad.detach()
+        assert lp == 'linf'
+        delta = grad.sign()
+        assert dire == 'pos'
+        noise = noise + alpha * delta
+        noise = noise.detach()
     return noise.detach()
 
 image_mean = [0.48145466, 0.4578275, 0.40821073]
@@ -203,7 +206,9 @@ image_std = [0.26862954, 0.26130258, 0.27577711]
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--eps', type=float, default=0.01)
+    parser.add_argument('--eps', type=float, default=0.001)
+    parser.add_argument('--steps', type=int, default=10)
+    parser.add_argument('--lp', type=str, default='linf', choices=['l1', 'l2', 'linf'])
     parser.add_argument('--dire', type=str, default='pos', choices=['pos', 'neg'])
     parser.add_argument('--output', type=str, default='./results')
     parser.add_argument('--ckpt', type=str, default=None)
@@ -220,12 +225,13 @@ if __name__ == "__main__":
                                 'early_stopping': True}
     folder = args.output
     os.makedirs(folder, exist_ok=True)
-    json_path = os.path.join(folder, 'dolphin_output.json')
+    json_file = os.path.join(folder, 'dolphin_output.json')
     with open('playground/dolphins_bench/dolphins_benchmark.json', 'r') as file:
         data = json.load(file)
     # random.shuffle(data)
+    target_labels = "The car is continues to drive forward. This can be inferred from the fact that the traffic is moving at a steady speed, indicating that the car is maintaining a consistent pace with the flow of traffic, The reason for this behavior is that there are no visible obstructions or congestion ahead, allowing the car to proceed without any significant changes in speed or direction."
 
-    with open(json_path, 'w') as file:
+    with open(json_file, 'w') as file:
         # 遍历JSON数据
         for entry in tqdm(data):
             instruction = ''
@@ -247,10 +253,10 @@ if __name__ == "__main__":
             tokenizer.pad_token_id = 50277
 
             images = get_model_inputs_images(video_path=video_path, image_processor=image_processor)
-            input_ids, attention_mask, labels = get_model_inputs_prompts_for_loss(instruction=instruction, target=ground_truth, model=model, tokenizer=tokenizer)
+            input_ids, attention_mask, labels = get_model_inputs_prompts_for_loss(instruction=instruction, target=target_labels, model=model, tokenizer=tokenizer)
 
-            # fgsm attack
-            noise = fgsm_attack(model=model, vision_x=images, input_ids=input_ids, attention_mask=attention_mask, labels=labels, epsilon=args.eps, dire=args.dire)
+            # pgd attack
+            noise = pgd_attack(model=model, vision_x=images, input_ids=input_ids, attention_mask=attention_mask, labels=labels, epsilon=args.eps, steps=args.steps, lp=args.lp, dire=args.dire)
 
             # inference
             inputs = get_model_inputs_prompts(instruction=instruction, model=model, tokenizer=tokenizer)
@@ -269,7 +275,7 @@ if __name__ == "__main__":
 
             generated_text = tokenizer.batch_decode(generated_tokens)
             last_answer_index = generated_text[0].rfind("<answer>")
-            content_after_last_answer = generated_text[0][last_answer_index + len("<answer>"):]  
+            content_after_last_answer = generated_text[0][last_answer_index + len("<answer>"):]
             final_answer = content_after_last_answer[:content_after_last_answer.rfind("<|endofchunk|>")]
             
             print('[Q]: ', instruction)
@@ -279,7 +285,7 @@ if __name__ == "__main__":
                 json.dumps({
                     "unique_id": unique_id,
                     "task_name": task_name,
-                    "pred": content_after_last_answer,
+                    "pred": final_answer,
                     "gt": ground_truth,
                     "label": label
                 }) + "\n"
