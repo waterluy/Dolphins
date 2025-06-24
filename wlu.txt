@@ -44,3 +44,6 @@ Compose(
     ToTensor()
     Normalize(mean=(0.48145466, 0.4578275, 0.40821073), std=(0.26862954, 0.26130258, 0.27577711))
 )
+
+Flamingo model initialized with 4782565440 trainable parameters
+Trainable params: 132160 || all params: 11529380992 || trainable%: 0.0011462887738006326

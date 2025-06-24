@@ -8,7 +8,7 @@ output_file = 'merged_scores.csv'
 merged_data = []
 header_written = False
 header = ['num']  # 第一列为序号（即xxx）
-top_folder = 'wlu_outputs/250616'
+top_folder = 'wlu_outputs/250624'
 
 # 遍历当前目录下的所有文件夹
 for folder in os.listdir(top_folder):
@@ -17,7 +17,7 @@ for folder in os.listdir(top_folder):
         try:
             attack_name = folder.split('-')[0]
             defense_name = folder.split('-')[-1]
-            csv_path = os.path.join(cur_folder, 'bench_score.csv')
+            csv_path = os.path.join(cur_folder, 'camouflage_score.csv')
             
             if not os.path.exists(csv_path):
                 print(f"⚠️ 跳过：{csv_path} 不存在")

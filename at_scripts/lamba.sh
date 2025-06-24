@@ -11,7 +11,8 @@ echo "当前日期: $current_date"  # 输出示例: 20250416
 # 获取脚本文件的名字
 script_name=$(basename "$0" .sh)
 
-VALUES=(0.01 0.05 0.2 0.5 1.0)
+# VALUES=(0.01 0.05 0.2 0.5 1.0)
+VALUES=(0.5 1.0)
 
 for lamb in "${VALUES[@]}"; do
     echo "开始运行 lamb = $lamb"

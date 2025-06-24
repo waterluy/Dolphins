@@ -1,5 +1,5 @@
 #!/usr/bin/bash
-export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6
+export CUDA_VISIBLE_DEVICES=0
 
 GPU_NUM=7
 JSON_FILE="forward.json"

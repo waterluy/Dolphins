@@ -58,6 +58,7 @@ import torch
 from mllm.src.flamingo import ForwardType
 from setting import ATConfig
 import enum
+os.environ["WANDB_MODE"] = "disabled"
 
 
 
