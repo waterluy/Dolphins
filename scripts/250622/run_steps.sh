@@ -1,6 +1,6 @@
 
 #!/bin/bash
-export CUDA_VISIBLE_DEVICES=1
+export CUDA_VISIBLE_DEVICES=5
 
 # 获取脚本文件的路径
 script_dir=$(dirname "$0")
@@ -18,7 +18,7 @@ steps=10
 exp_name="${output}/${script_name}"
 json_file="test.json"
 
-VALUES=(1 5 10 20 50)
+VALUES=(1 5 10)
 
 for steps in "${VALUES[@]}"; do
     echo "开始运行 steps = $steps"
@@ -29,7 +29,7 @@ for steps in "${VALUES[@]}"; do
     --output $exp_name \
     --eps "$eps" \
     --steps "$steps" \
-    --ckpt "ckpts/20250522/adapterRes_both_key_entropy_atten/llava_bddx/step_540/checkpoint540.pt " \
+    --ckpt "ckpts/20250522/adapterRes_both_key_entropy_atten/llava_bddx/step_540/checkpoint540.pt" \
     --forward_type 15
 
     python tools/dolphin_evaluate.py \
@@ -39,16 +39,16 @@ for steps in "${VALUES[@]}"; do
 
     exp_name="${output}/attack-steps${steps}"
 
-    python exr/dolphins_bench_attack_pgd_white.py \
-    --output $exp_name \
-    --eps "$eps" \
-    --steps "$steps" \
-    --forward_type 0
+    # python exr/dolphins_bench_attack_pgd_white.py \
+    # --output $exp_name \
+    # --eps "$eps" \
+    # --steps "$steps" \
+    # --forward_type 0
 
-    python tools/dolphin_evaluate.py \
-    --exp ${exp_name}/dolphin_output.json \
-    --api 'aihub' \
-    --gpt 'gpt-3.5-turbo'
+    # python tools/dolphin_evaluate.py \
+    # --exp ${exp_name}/dolphin_output.json \
+    # --api 'aihub' \
+    # --gpt 'gpt-3.5-turbo'
 done
 
 

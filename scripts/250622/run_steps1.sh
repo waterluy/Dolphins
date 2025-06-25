@@ -1,6 +1,6 @@
 
 #!/bin/bash
-export CUDA_VISIBLE_DEVICES=2
+export CUDA_VISIBLE_DEVICES=6
 
 # 获取脚本文件的路径
 script_dir=$(dirname "$0")
@@ -18,12 +18,12 @@ steps=10
 exp_name="${output}/${script_name}"
 json_file="test.json"
 
-VALUES=(0.01 0.02 0.05)
+VALUES=(20 50)
 
-for eps in "${VALUES[@]}"; do
-    echo "开始运行 eps = $eps"
+for steps in "${VALUES[@]}"; do
+    echo "开始运行 steps = $steps"
 
-    exp_name="${output}/defense-eps${eps}"
+    exp_name="${output}/defense-steps${steps}"
 
     python exr/dolphins_bench_attack_pgd_white.py \
     --output $exp_name \
@@ -37,7 +37,7 @@ for eps in "${VALUES[@]}"; do
     --api 'aihub' \
     --gpt 'gpt-3.5-turbo'
 
-    # exp_name="${output}/attack-eps${eps}"
+    exp_name="${output}/attack-steps${steps}"
 
     # python exr/dolphins_bench_attack_pgd_white.py \
     # --output $exp_name \

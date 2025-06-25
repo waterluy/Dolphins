@@ -1,6 +1,6 @@
 
 #!/bin/bash
-export CUDA_VISIBLE_DEVICES=2
+export CUDA_VISIBLE_DEVICES=4
 
 # 获取脚本文件的路径
 script_dir=$(dirname "$0")
@@ -18,7 +18,7 @@ steps=10
 exp_name="${output}/${script_name}"
 json_file="test.json"
 
-VALUES=(0.01 0.02 0.05)
+VALUES=(0.1 0.15 0.2)
 
 for eps in "${VALUES[@]}"; do
     echo "开始运行 eps = $eps"
