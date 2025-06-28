@@ -8,7 +8,7 @@ output_file = 'merged_scores.csv'
 merged_data = []
 header_written = False
 header = ['num']  # 第一列为序号（即xxx）
-top_folder = 'wlu_outputs/250622'
+top_folder = 'wlu_outputs/250625'
 
 # 遍历当前目录下的所有文件夹
 for folder in os.listdir(top_folder):
