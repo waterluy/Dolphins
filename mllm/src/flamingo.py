@@ -281,6 +281,64 @@ class Flamingo(nn.Module):
             self.lang_encoder.clear_conditioned_layers()
 
         return output
+    
+    def forward_auto_attack(
+        self,
+        vision_x: torch.Tensor,
+        lang_x: torch.Tensor,
+        attention_mask: torch.Tensor = None,
+        labels: torch.Tensor = None,
+        media_locations : torch.Tensor = None,
+        clear_conditioned_layers: bool = True,
+        past_key_values=None,
+        use_cache: bool = False,
+        forward_type=ForwardType.Default,
+    ):
+        assert (
+            self.lang_encoder.initialized_flamingo
+        ), "Flamingo layers are not initialized. Please call `init_flamingo` first."
+
+        assert (
+            self.lang_encoder._use_cached_vision_x or vision_x is not None
+        ), "Must provide either vision_x or have precached media using cache_media()."
+
+        if self.lang_encoder._use_cached_vision_x:
+            # Case: use cached; vision_x should be cached and other
+            # vision-related inputs should not be provided.
+            assert (
+                vision_x is None
+            ), "Expect vision_x to be None when media has been cached using cache_media(). Try uncache_media() first."
+            assert self.lang_encoder.is_conditioned()
+
+        else:
+            # Case: do not use caching (i.e. this is a standard forward pass);
+            if forward_type in [
+                ForwardType.Default,
+            ]:
+                self._encode_vision_x_original(vision_x=vision_x)
+            elif forward_type in [
+                ForwardType.AdapterResBothKeyEntropyAtten,
+            ]:
+                self._encode_vision_x_with_adapterwl0318(vision_x=vision_x, forward_type=forward_type)
+            else:
+                raise NotImplementedError(
+                    f"forward_type {forward_type} is not implemented."
+                )
+            self._condition_media_locations(input_ids=lang_x)
+
+        output = self.lang_encoder(
+            input_ids=lang_x,
+            attention_mask=attention_mask,
+            labels=labels,
+            media_locations=media_locations,
+            past_key_values=past_key_values,
+            use_cache=use_cache,
+        )
+
+        if clear_conditioned_layers:
+            self.lang_encoder.clear_conditioned_layers()
+
+        return output
 
     def forward_trades(
         self,
